@@ -1,0 +1,102 @@
+#!/usr/bin/perl
+
+## Script written by Noah Guttman and Copyright (C) 2014 Noah Guttman. This script is released and distributed under the terms of the GNU General Public License
+
+#Libraries to use
+#use strict;
+use lib "/usr/local/nagios/perl/lib";
+use lib "/usr/local/nagios/libexec/";
+use Getopt::Std;
+
+# Check for proper args....
+
+use vars qw($opt_h $opt_H $opt_C $opt_M $opt_U);
+my $currentStatus;
+my $justStatus;
+my $exitcode=3;
+my @statusList;
+my $val;
+my $criticals=0;
+
+if ($#ARGV le 0) {
+	print "You really should have specfied a switch. Displaying the help.\n";
+	$opt_h = true;
+} else {
+        getopts('hH:C:M:U:');
+}
+
+
+## Display Help
+if ($opt_h){
+        print "::Juniper SRX Check Instructions::\n\n";
+        print " -h,             Display this help information\n";
+        print " -H,             Hostname or IP to check\n";
+        print " -U,             Username to use\n";
+        print " -M,             Specify a message to return on failure\n";
+        print " -C,             Check Type (alarms, environment)\n";
+        print " \n";
+        print "In order for this script to work you must first set up a trusted key\n";
+        print "http://www.juniper.net/techpubs/en_US/junos13.2/topics/task/configuration/security-ssh-hostkeys-secure-copying.html\n
+";
+        print "\n";
+        print "Script written by Noah Guttman and Copyright (C) 2014 Noah Guttman.\n";
+        print "This script is released and distributed under the terms of the GNU\n";
+        print "General Public License.     >>>>    http://www.gnu.org/licenses/\n";
+        print "";
+        print "This program is free software: you can redistribute it and/or modify\n";
+        print "it under the terms of the GNU General Public License as published by\n";
+        print "the Free Software Foundation.\n\n";
+        print "This program is distributed in the hope that it will be useful,\n";
+        print "but WITHOUT ANY WARRANTY; without even the implied warranty of\n";
+        print "MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n";
+        print "GNU General Public License for more details.\n";
+        print ">>>>    http://www.gnu.org/licenses/\n";
+        exit 0;
+}
+
+if (!$opt_H){
+	print "You must specify a Hostname or IP to check (-H)\n";
+	exit 3;
+}
+
+if (!$opt_U){
+        print "You must specify a Username to use (-U)\n";
+        exit 3;
+}
+
+if ($opt_C =~ /alarms/){
+	$currentStatus = `ssh $opt_U\@$opt_H "show chassis alarms"`;
+	$val =()= $currentStatus =~ /No alarms currently active/gi;
+	if ($val == 1){
+		print "OK: No alarms currently active on either node\n";\
+		exit 0;
+	}else{
+		print "CRITICAL: $currentStatus\n";\
+                exit 2;
+	}
+}elsif($opt_C =~ /environment/){
+        $currentStatus = `ssh $opt_U\@$opt_H "show chassis environment"`;
+	@statusList = split("\n",$currentStatus);
+	foreach my $line (@statusList){
+		if ((($line =~ /OK/i) || ($line =~ /Status/i)) || (($line =~ /node/i) || ($line =~ /--------/i))){
+			#print "OK \n";
+		}elsif ($line =~ //i){
+			$critcals++;
+		}
+	}
+	if ($critcals > 0){
+		print"Critical:\n$currentStatus\n";
+		exit 2;
+	}else{
+		print"OK:\n$currentStatus\n";
+		exit 0;
+	}		
+}else{
+        print "You must specify a check type (alarms, environment, fan, status) (-C)\n";
+        exit 3;
+}
+
+
+#Code should not be ablt to get this far
+print "The code has reached a point that should not be possible. This should be investigated.\n";
+exit 3;

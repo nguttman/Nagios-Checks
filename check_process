@@ -1,0 +1,347 @@
+#!/usr/bin/perl
+
+
+## Script written by Noah Guttman and Copyright (C) 2011 Noah Guttman. This script is released and distributed under the terms of the GNU General Public License
+
+#Libraries to use
+use lib "/usr/lib/perl5/5.8.8/";
+use lib "/usr/lib/perl5/5.8.8/Getopt/";
+
+use strict;
+use Getopt::Std;
+
+use vars qw($opt_a $opt_c $opt_d $opt_p $opt_w $opt_M $opt_N $opt_P $opt_C $opt_h $opt_R);
+
+
+my $returnmessage = "";
+my $checktoken;
+my $warning;
+my $critical;
+my $PID;
+my $returnname="";
+my $line;
+my $total_proc;
+my $processesrunning=0;
+my $restartcommand='';
+
+## w=primary test warning level
+## c=primary test critical level
+## d=displayname
+## M=error message to display on failure
+## p=processname
+## a=process argument 
+## P=PID number
+## I=PID file
+## T=Primary Check type
+
+##init();
+
+# Get the options
+if ($#ARGV le 0) {
+	$opt_h = 1;
+} else {
+	getopts('hC:p:a:c:d:w:M:N:P:R:');
+}
+
+
+## Display Help
+if ($opt_h){
+	print "::Process Resource Usage Check Instructions::\n\n";
+	print " -h,		Display this help information\n";
+	print " -C,		Specify a check type: CPU(percent), Memory(percent), VSZ, RSS, stats\n";
+        print "                  If stats is selected the check will report all four stats and only alert if\n";
+        print "                  the process is not running\n";
+        print " -w,		Specify a warning level for the check\n";
+        print "                  The default is 60 percent or 1000000 kilobytes\n";
+        print " -c,		Specify a critical level for the check\n";
+        print "			 The default is 70 percent or 2000000 kilobytes\n";
+        print " -M,		Specify a message to return on failure\n";
+        print " -N,		Specify a differnet name for the process\n";
+        print "                  This is for display in Nagios messages\n";
+        print "                  Example: check_process.sh -p java -N Tomcat\n";
+        print "                  The java process will be monitored and\n";
+        print "                  the Nagios message will read:\n";
+        print "            		The Tomcat process is currently OK.\n";
+	print " -R,            The script to use to restart the process\n";
+	print " 		If selected this will be added the the output on CRITICAL\n";
+        print "                 This is an easy way to pass information to an Event Handler\n";
+        print "		***Only use one of the following***\n";
+        print " -p,		Specify a process name to be monitored\n";
+        print " -a,		Specify a process with the following argument in the\n";
+        print "                  command line to be monitored\n";
+        print " -P,		Specify a PID file containg the PID to be monitored\n\n\n";
+        print "Script written by Noah Guttman and Copyright (C) 2011 Noah Guttman.\n";
+        print "This script is released and distributed under the terms of the GNU\n";
+        print "General Public License.     >>>>    http://www.gnu.org/licenses/\n";
+        print "";
+        print "This program is free software: you can redistribute it and/or modify\n";
+        print "it under the terms of the GNU General Public License as published by\n";
+        print "the Free Software Foundation.\n\n";
+        print "This program is distributed in the hope that it will be useful,\n";
+        print "but WITHOUT ANY WARRANTY; without even the implied warranty of\n";
+        print "MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n";
+        print "GNU General Public License for more details.\n";
+        print ">>>>    http://www.gnu.org/licenses/\n";
+        exit 0; 
+}
+
+
+
+
+
+##Set custom output if any set
+if ($opt_M){
+	$returnmessage=$opt_M;
+}else{
+	$returnmessage="";
+}
+
+##set which column of the ps to check
+if ((($opt_C eq "cpu") || ($opt_C eq "Cpu")) || ($opt_C eq "CPU")){
+	$checktoken=3
+}elsif ((($opt_C eq "memory") || ($opt_C eq "Memory")) || ($opt_C eq "MEMORY")){
+	$checktoken=4;
+}elsif ($opt_C eq "VSZ"){
+     	$checktoken="5";
+}elsif ($opt_C eq "RSS"){
+	$checktoken="6";
+}elsif ($opt_C eq "stats"){
+	$checktoken="7";
+}else{	
+	print "No valid check type defined. us -h for help\n";
+	exit 3;
+}
+			
+##Set Warning and critical levels
+
+if (($checktoken==3)||($checktoken==4)){
+	if ($opt_w && ($opt_c)) {
+		$warning = $opt_w;
+		$critical = $opt_c;
+	}else{
+		$warning = 60;
+		$critical =70;
+	}
+}elsif (($opt_C eq "VSZ")||($opt_C eq "RSS")){
+	if ($opt_w && ($opt_c)) {
+		$warning = $opt_w;
+		$critical = $opt_c;
+	}else{
+		$warning = 1000000;
+		$critical =2000000;
+	}	
+}elsif ($checktoken!="7"){
+        print "No valid check type defined. us -h for help\n";
+        exit 0;
+}
+
+##Process arguments
+
+##Set the return name
+if ($opt_N){
+	$returnname=$opt_N;
+}elsif ($opt_P){
+	$returnname=$opt_P;
+}elsif ($opt_p){
+	$returnname=$opt_p;
+}elsif ($opt_a){
+	$returnname=$opt_a;
+}
+##Check to see if the process is running
+if ($opt_P){
+        if (-e $opt_P){
+		$PID = (`/bin/cat $opt_P`);
+		chomp($PID);
+		$processesrunning=(`/bin/ps -eo pid,ppid |grep -vw grep |grep -vw check_process_resources |grep -cw $PID`);
+	}else{
+		$processesrunning=0;
+	}
+}elsif ($opt_p){
+        $processesrunning=(`/bin/ps -eo comm |grep -vw grep |grep -wv check_process_resources |grep -c $opt_p`);
+}elsif ($opt_a){
+        $processesrunning=(`/bin/ps -eo cmd |grep -vw grep |grep -vw check_process_resources |grep -c $opt_a`);
+}
+chomp($processesrunning);
+# processesrunning is is now the number of running processes
+#Return results and exit if there are no processes running or continue, if there are.
+if ($processesrunning < 1) {
+	if ($opt_R){
+                print ("$opt_R CRITICAL:The $returnname process doesn't appear to be running. $returnmessage\n");
+	}else{
+	        print ("CRITICAL:The $returnname process doesn't appear to be running. $returnmessage\n");
+	}
+	exit 2;
+}
+
+
+# Setting Variables with Monitoring Process and Custom Check Tokens  THIS RUNS THE CHECK
+#Checking the actual stats
+if ($checktoken == 3){
+	if ($opt_P){
+		foreach $line (`/bin/ps -eo ppid,pid,pcpu,pmem,vsz,rss,cmd --no-header |grep -vw grep |grep -vw check_process_resources |grep -w $PID |awk \'{print \$3}\'`){
+                        if ($line !~ /^$/){
+			 	$total_proc = $line + $total_proc;
+			}
+		}
+	}elsif ($opt_p){
+		foreach $line (`/bin/ps -eo ppid,pid,pcpu,pmem,vsz,rss,comm --no-header |grep -vw grep |grep -vw check_process_resources |grep $opt_p |awk \'{print \$3}\'`){
+			if ($line !~ /^$/){
+               		 	$total_proc = $line + $total_proc;
+      	 		}
+		}
+	}elsif ($opt_a){
+		foreach $line (`/bin/ps -eo ppid,pid,pcpu,pmem,vsz,rss,cmd --no-header |grep -vw grep |grep -vw check_process_resources |grep $opt_a |awk \'{print \$3}\'`){
+			if ($line !~ /^$/){
+               		 	$total_proc = $line + $total_proc;
+      	 		}
+		}
+	}
+}elsif ($checktoken == 4){
+	if ($opt_P){
+		foreach $line (`/bin/ps -eo ppid,pid,pcpu,pmem,vsz,rss,cmd --no-header |grep -vw grep |grep -vw check_process_resources |grep $PID |awk \'{print \$4}\'`){
+			if ($line !~ /^$/){
+               		 	$total_proc = $line + $total_proc;
+      	 		}
+		}
+	}elsif ($opt_p){
+                foreach $line (`/bin/ps -eo ppid,pid,pcpu,pmem,vsz,rss,comm --no-header |grep -vw grep |grep -vw check_process_resources |grep $opt_p |awk \'{print \$4}\'`){
+			if ($line !~ /^$/){
+               		 	$total_proc = $line + $total_proc;
+      	 		}
+		}
+	}elsif ($opt_a){
+		foreach $line (`/bin/ps -eo ppid,pid,pcpu,pmem,vsz,rss,cmd --no-header |grep -vw grep |grep -vw check_process_resources |grep $opt_a |awk \'{print \$4}\'`){
+			if ($line !~ /^$/){
+               		 	$total_proc = $line + $total_proc;
+      	 		}
+		}
+	}
+}elsif ($checktoken == 5){
+	if ($opt_P){
+		foreach $line (`/bin/ps -eo ppid,pid,pcpu,pmem,vsz,rss,cmd --no-header |grep -vw grep |grep -vw check_process_resources |grep $PID |awk \'{print \$5}\'`){
+			if ($line !~ /^$/){
+               		 	$total_proc = $line + $total_proc;
+      	 		}
+		}
+	}elsif ($opt_p){
+                foreach $line (`/bin/ps -eo ppid,pid,pcpu,pmem,vsz,rss,comm --no-header |grep -vw grep |grep -vw check_process_resources |grep $opt_p |awk \'{print \$5}\'`){
+			if ($line !~ /^$/){
+               		 	$total_proc = $line + $total_proc;
+      	 		}
+		}
+	}elsif ($opt_a){
+		foreach $line (`/bin/ps -eo ppid,pid,pcpu,pmem,vsz,rss,cmd --no-header |grep -vw grep |grep -vw check_process_resources |grep $opt_a |awk \'{print \$5}\'`){
+			if ($line !~ /^$/){
+               		 	$total_proc = $line + $total_proc;
+     	 		}
+		}
+	}
+}elsif ($checktoken == 6){
+	if ($opt_P){
+		foreach $line (`/bin/ps -eo ppid,pid,pcpu,pmem,vsz,rss,cmd --no-header |grep -vw grep |grep -vw check_process_resources |grep $PID |awk \'{print \$6}\'`){
+			if ($line !~ /^$/){
+               		 	$total_proc = $line + $total_proc;
+      	 		}
+		}
+	}elsif ($opt_p){
+                foreach $line (`/bin/ps -eo ppid,pid,pcpu,pmem,vsz,rss,comm --no-header |grep -vw grep |grep -vw check_process_resources |grep $opt_p |awk \'{print \$6}\'`){
+			if ($line !~ /^$/){
+               		 	$total_proc = $line + $total_proc;
+      	 		}
+		}
+	}elsif ($opt_a){
+		foreach $line (`/bin/ps -eo ppid,pid,pcpu,pmem,vsz,rss,cmd --no-header |grep -vw grep |grep -vw check_process_resources |grep $opt_a |awk \'{print \$6}\'`){
+			if ($line !~ /^$/){
+               		 	$total_proc = $line + $total_proc;
+      	 		}
+		}
+	}
+}elsif ($checktoken == 7){
+	my @lineoutput;
+	my $pcpu;
+	my $pmem;
+	my $prss;
+	my $pvsz;
+        if ($opt_P){
+                foreach $line (`/bin/ps -eo ppid,pid,pcpu,pmem,vsz,rss,cmd --no-header |grep -vw grep |grep -vw check_process_resources |grep $PID |awk \'{print \$3" "\$4" " \$5" " \$6}\'`){
+                        if ($line !~ /^$/){
+				@lineoutput = split(" ",$line);
+				$pcpu = $pcpu + $lineoutput[0];
+				$pmem = $pmem + $lineoutput[1];
+				$prss = $prss + $lineoutput[2];
+				$pvsz = $pvsz + $lineoutput[3];
+                        }
+                }
+        }elsif ($opt_p){
+                foreach $line (`/bin/ps -eo ppid,pid,pcpu,pmem,vsz,rss,comm --no-header |grep -vw grep |grep -vw check_process_resources |grep $opt_p |awk \'{print \$3" "\$4" " \$5" " \$6}\'`){
+                        if ($line !~ /^$/){
+                                @lineoutput = split(" ",$line);
+                                $pcpu = $pcpu + $lineoutput[0];
+                                $pmem = $pmem + $lineoutput[1];
+                                $prss = $prss + $lineoutput[2];
+                                $pvsz = $pvsz + $lineoutput[3];
+                        }
+                }
+        }elsif ($opt_a){
+                foreach $line (`/bin/ps -eo ppid,pid,pcpu,pmem,vsz,rss,cmd --no-header |grep -vw grep |grep -vw check_process_resources |grep $opt_a |awk \'{print \$3" "\$4" " \$5" "\$6}\'`){
+                        if ($line !~ /^$/){
+                                @lineoutput = split(" ",$line);
+                                $pcpu = $pcpu + $lineoutput[0];
+                                $pmem = $pmem + $lineoutput[1];
+                                $prss = $prss + $lineoutput[2];
+                                $pvsz = $pvsz + $lineoutput[3];
+                        }
+                }
+        }
+	$total_proc = "CPU=$pcpu"."%;;;; Memory=$pmem"."%;;;; RSS=$prss"."KB;;;; VSZ=$pvsz"."KB;;;;";
+}else{
+	print "There is an error with your check's syntax. use -h for help\n";
+	exit 0;
+}
+
+
+## do the check and return the results
+if ($checktoken == 7){
+	print ("OK:Process $returnname is running| $total_proc\n");
+	exit 0;
+}elsif (($checktoken==3) || ($checktoken==4)){
+        if ($total_proc < $warning){
+	        $total_proc=$total_proc."%";
+                print ("Process $returnname OK: $total_proc $opt_C |$opt_C=$total_proc\n");
+                exit 0;
+	}elsif (($total_proc > $warning) && ($total_proc < $critical)){
+	        $total_proc=$total_proc."%";
+                print ("Process $returnname WARNING: $total_proc $opt_C $returnmessage |$opt_C=$total_proc\n");
+                exit 1;
+        }else{
+                $total_proc=$total_proc."%";
+		if ($opt_R){
+                        print ($opt_R "Process $returnname CRITICAL: $total_proc $opt_C $returnmessage |$opt_C=$total_proc\n");
+		}else{
+	                print ("Process $returnname CRITICAL: $total_proc $opt_C $returnmessage |$opt_C=$total_proc\n");
+		}
+		exit 2;
+        }
+}else{
+        if ($total_proc < $warning){
+	        $total_proc=$total_proc."KB";
+                print ("Process $returnname OK: $total_proc $opt_C |$opt_C=$total_proc\n");
+                exit 0;
+	}elsif (($total_proc > $warning) && ($total_proc < $critical)){
+	        $total_proc=$total_proc."KB";
+                print ("Process $returnname WARNING: $total_proc $opt_C $returnmessage |$opt_C=$total_proc\n");
+                exit 1;
+        }else{
+	        $total_proc=$total_proc."KB";
+                if ($opt_R){
+	                print ("$opt_R Process $returnname CRITICAL: $total_proc $opt_C $returnmessage |$opt_C=$total_proc\n");
+		}else{
+                        print ("Process $returnname CRITICAL: $total_proc $opt_C $returnmessage |$opt_C=$total_proc\n");
+		}
+                exit 2;
+        }
+}
+#code should never be able to get this far
+print "Something has gone wrong and the code has reached a place that should not be possible. This should be looked into\n";
+exit 3;
+

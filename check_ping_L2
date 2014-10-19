@@ -1,0 +1,172 @@
+#!/usr/bin/perl
+
+
+## Script written by Noah Guttman and Copyright (C) 2011 Noah Guttman. This script is released and distributed under the terms of the GNU General Public License
+
+
+#Libraries to use
+use lib "/usr/local/nagios/perl/lib/";
+use lib "/usr/local/nagios/perl/lib/Getopt/";
+
+use strict;
+use Getopt::Std;
+use Net::Ping;
+use Mail::Sendmail;
+
+use vars qw($opt_h $opt_H $opt_M $opt_N $opt_O $opt_w $opt_c $opt_P $opt_m);
+
+my $returnmessage="";
+my $name;
+my $host;
+
+my $emailtext="";
+my $bashcommand;
+my $timestamp = localtime();
+
+###Customize this for your needs###
+my $from_address ="nagios\@mycompany.com";
+my $fullemailmessage ="Dear NOC, \n\n Please check the MTR output(s) below and open tickets with the offending customer contacts as per wiki. By looking at the Network diagram (if present) and comparing it to the MTR you should be able to determine who the faulty hop belongs too. If the MTR below contains no indications of packet loss (or extreme latency) then please close the case as the issue was very short lived.\n***When in doubt contact all the people indicated in the wiki.***\n The MTR output will be much clearer in a fixed-width font such as Courier-New or by pasting it into Notepad\n\nReplies to this e-mail will not work.\n\nThanks\n\tOpsview\n";
+###End###
+
+my $count=0;
+my $performance;
+my $localIP;
+my $p;
+my %mail;
+
+# Get the options
+if ($#ARGV le 0) {
+        $opt_h = 1;
+} else {
+        getopts('hH:M:N:O:w:c:m:P:');
+}
+
+
+## Display Help
+if ($opt_h){
+        print "::L2/L3 Ping Check Instructions::\n\n";
+        print " -h,             Display this help information\n";
+        print " -H,             Specify a host to check\n";
+        print " -M,             Specify a message to return on failure\n";
+        print " -N,             Specify a differnet hostname for the output\n";
+        print "                  This is for display in Nagios messages\n";
+        print "                  Example: -H 127.0.0.1 -N loopback\n";
+        print "                  The host 127.0.0.1 will be monitored and\n";
+        print "                  the Nagios message will read:\n";
+        print "                         The host loopback is currently OK.\n";
+        print " -O,             Specify an originating IP to use (must be on the box)\n";
+	print " -w,		Less than this % of sucessful pings triggers a warning\n";
+	print "			 Defaults to 40 if not set\n";
+	print " -c,		Less than this % of sucessful pings triggers a critcal\n";
+	print "			 Defaults to 80 if not set\n";
+	print "			 The first critical alert trigger an MTR check with the\n";
+	print "			 results emailed to the specific address.\n";
+	print " -P		Number of icmp packets to send\n";
+	print " 		 Defaults to 10 if not set\n";	
+	print " -m,		Email address to send the MTR tests\n";
+        print "Script written by Noah Guttman and Copyright (C) 2011 Noah Guttman.\n";
+        print "This script is released and distributed under the terms of the GNU\n";
+        print "General Public License.     >>>>    http://www.gnu.org/licenses/\n";
+        print "";
+        print "This program is free software: you can redistribute it and/or modify\n";
+        print "it under the terms of the GNU General Public License as published by\n";
+        print "the Free Software Foundation.\n\n";
+        print "This program is distributed in the hope that it will be useful,\n";
+        print "but WITHOUT ANY WARRANTY; without even the implied warranty of\n";
+        print "MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n";
+        print "GNU General Public License for more details.\n";
+        print ">>>>    http://www.gnu.org/licenses/\n";
+        exit 0; 
+}
+
+unless ($opt_m){
+	print "You must specify an email address for the MTR reports\n";
+	exit 3;
+}
+unless ($opt_w){
+	$opt_w = 40;
+}
+unless ($opt_c){
+	$opt_c = 80;
+}
+unless ($opt_P){
+	$opt_P = 10;
+}
+##Set custom output if any set
+if ($opt_M){
+        $returnmessage=$opt_M;
+}
+if ($opt_N){
+	$name = $opt_N;
+}else{
+	$name = $opt_H;
+}
+unless ($opt_O){
+	my $temp = `/sbin/ifconfig |/bin/grep inet |/bin/grep -v \"127.0.0.1\" |awk \'{print \$2}\'i |head -1`;
+	$localIP = substr $temp, 5;
+	chomp($localIP);
+}
+if ($opt_H){
+	for (my $i=0; $i<$opt_P; $i++){
+	        $p = Net::Ping->new('icmp');
+		if ($opt_O){
+		        $p->bind($opt_O);
+		}else{
+			$p->bind($localIP);
+		}
+
+	        if ($p->ping($opt_H, 1)){
+	                $count++;
+	        }else{
+	        }
+	        sleep 1;
+	}
+}else{
+	print ("You must specify a host to check\n");
+	exit 3;
+}
+
+$performance =  ((($opt_P - $count) / $opt_P ) * 100);
+if ($count == $opt_P){
+	if (-e "/tmp/$name.failed"){
+		system("rm -rf /tmp/$name.failed");
+	}
+	print("OK: The $name connection is up and running $opt_H|PacketLoss=$performance%;;;;\n");
+	exit 0;
+}elsif ((($count / $opt_P) * 100) < $opt_c){
+
+	unless(-e "/tmp/$name.failed"){
+		system("touch /tmp/$name.failed");
+		if ($opt_O){
+			$localIP=$opt_O;
+			$emailtext = `sudo /usr/sbin/mtr -a $opt_O -rc 20 $opt_H`;
+		}else{
+			$emailtext = `sudo /usr/sbin/mtr -rc 20 $opt_H`;
+		}
+		$fullemailmessage = "$fullemailmessage\n $returnmessage\n\n $emailtext";
+
+                %mail = ( To => '$opt_m',
+                From    => 'opsview-slave@xconnect.net',
+                Subject => "MTR from $localIP to $name with IP: $opt_H at $timestamp",
+                Message => "$fullemailmessage"
+                );
+                sendmail(%mail) or die $Mail::Sendmail::error;
+	}
+	
+}
+if ($count != 0){
+	print("WARNING: The $name connection is experiencing packet loss $count out of $opt_P were successful");
+	if ((($count / $opt_P)*100) < $opt_w){
+		print ("$returnmessage|PacketLoss=$performance%;;;;\n");
+		exit 2;
+	}else{
+		print("|PacketLoss=$performance%;;;;\n");
+		exit 1;
+	}
+}else{
+	print("CRITICAL: The $name connection is down $opt_H is not responding. $returnmessage|PacketLoss=$performance%;;;;\n");
+        exit 2;
+}
+#Code should be able to get this far
+print "Something has gone wrong with the check.\n";
+exit 3; 
