@@ -1,0 +1,224 @@
+#!/usr/bin/perl  
+###########################################################################
+# Invite other party, recv RTP data for some seconds or until other side
+# hangs up, then BYE
+#
+# Most of the code is option parsing and usage, the Net::SIP related code
+# is at the end
+###########################################################################
+
+use strict;
+#use warnings;
+use IO::Socket::INET;
+use Getopt::Long qw(:config posix_default bundling);
+
+use lib "/usr/lib/perl5/5.8.8/";
+
+use Net::SIP;
+use Net::SIP::Util 'create_socket_to';
+use Net::SIP::Debug;
+
+use IO::Socket;
+
+
+my $exitcode;
+my $checkresponse;
+my $hostname="opsview-slave"; #change this to your hostname
+my($addr)=inet_ntoa((gethostbyname($hostname))[4]);
+
+sub usage {
+	print STDERR "ERROR: @_\n" if @_;
+	print STDERR <<EOS;
+::Check Testcall Intructions::
+usage: $0 [ options ] FROM TO
+Makes SIP call from FROM to TO, with
+and optional hang up after some time
+Options:
+  -d|--debug [level]           Enable debugging
+  -h|--help                    Help (this info)
+  -P|--proxy host[:port]       use outgoing proxy, register there unless registrar given
+  -O|--outfile filename        write received RTP data to file
+  -t|--time interval           hang up after interval seconds
+  -T|--to		       phone number to call
+  -B|--backup		       second phone number to call if the first check fails
+  --username name              username for authorization
+  --password pass              password for authorization
+
+Example:
+  $0 -P 172.16.100.1:5060  --username TestUser --password TestPassword -T 12127773456 -B 12017773456 -t 10;
+
+Original Script created by Steffen Ullrich 
+Script modified by Noah Guttman
+This script is released and distributed under the terms of the GNU
+General Public License.     >>>>    http://www.gnu.org/licenses/
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation.\n\n";
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+>>>>    http://www.gnu.org/licenses/
+EOS
+	exit( @_ ? 1:0 );
+}
+
+
+###################################################
+# Get options
+###################################################
+
+my ($proxy,$outfile,$registrar,$username,$password,$hangup,$local_leg,$contact);
+my (@routes,$debug,$tonumber,$backupnumber);
+my $call;
+my $callerror;
+my $mediaoutputsize;
+GetOptions(
+	'd|debug:i' => \$debug,
+	'h|help' => sub { usage() },
+	'P|proxy=s' => \$proxy,
+	'O|outfile=s' => \$outfile,
+	't|time=i' => \$hangup,
+	'username=s' =>\$username,
+	'password=s' =>\$password,
+	'T|to=s' =>\$tonumber,
+	'B|backup=s' =>\$backupnumber,
+) || usage( "bad option" );
+
+
+
+Net::SIP::Debug->level( $debug || 1 ) if defined $debug;
+my $from = "sip:opsview\@$addr:5060";
+my $to = "sip:$tonumber\@$proxy";
+my $Bto = "sip:$backupnumber\@$proxy";
+
+if (!$outfile){
+	my $random = rand();
+        $outfile = "/tmp/$random.mediaOUT";
+}
+
+###################################################
+# find local leg
+###################################################
+my ($local_host,$local_port);
+if ( $local_leg ) {
+	($local_host,$local_port) = split( m/:/,$local_leg,2 );
+} elsif ( ! $proxy ) {
+	# if no proxy is given we need to find out
+	# about the leg using the IP given from FROM
+	($local_host,$local_port) = $from =~m{\@([\w\-\.]+)(?::(\d+))?}
+		or die "cannot find SIP domain in '$from'";
+}
+
+my $leg;
+if ( $local_host ) {
+	my $addr = gethostbyname( $local_host )
+		|| die "cannot get IP from SIP domain '$local_host'";
+	$addr = inet_ntoa( $addr );
+
+	$leg = IO::Socket::INET->new(
+		Proto => 'udp',
+		LocalAddr => $addr,
+		LocalPort => $local_port || 5060,
+	);
+
+	# if no port given and port 5060 is already used try another one
+	if ( !$leg && !$local_port ) {
+		$leg = IO::Socket::INET->new(
+			Proto => 'udp',
+			LocalAddr => $addr,
+			LocalPort => 0
+		) || die "cannot create leg at $addr: $!";
+	}
+
+	$leg = Net::SIP::Leg->new( sock => $leg );
+}
+
+###################################################
+# SIP code starts here
+###################################################
+
+# create necessary legs
+# If I have an only outgoing proxy I could skip this step because constructor
+# can make leg to outgoing_proxy itself
+#my @legs;
+#push @legs,$leg if $leg;
+#foreach my $addr ( $proxy,$registrar) {
+#	$addr || next;
+#	if ( ! grep { $_->can_deliver_to( $addr ) } @legs ) {
+#		my $sock = create_socket_to($addr) || die "cannot create socket to $addr";
+#		push @legs, Net::SIP::Leg->new( sock => $sock );
+#	}
+#}
+
+# create user agent
+my $ua = Net::SIP::Simple->new(
+	from => $from,
+	outgoing_proxy => $proxy,
+	route => \@routes,
+#	legs => \@legs,
+	$contact ? ( contact => $contact ):(),
+	$username ? ( auth => [ $username,$password ] ):(),
+);
+
+
+# invite peer
+my $peer_hangup; # did peer hang up?
+$call = $ua->invite( $to,
+	# echo back, use -1 instead of 0 for not echoing back
+	init_media => $ua->rtp( 'recv_echo', $outfile,0 ),
+	recv_bye => \$peer_hangup,
+) || die $ua->error;
+$callerror = $call->error;
+if (!($callerror =~ m/Failed/)){
+	$checkresponse = "OK: Test call to number $tonumber via proxy $proxy successfull";
+	$exitcode=0;
+}elsif ($backupnumber){
+	$call= $ua->invite( $Bto,
+        	# echo back, use -1 instead of 0 for not echoing back
+        	init_media => $ua->rtp( 'recv_echo', $outfile,0 ),
+        	recv_bye => \$peer_hangup,
+	) || die $ua->error;
+	$callerror = $call->error;
+	if (!($callerror =~ m/Failed/)){
+	        $checkresponse = "WARNING: Test call to number primary number $tonumber failed. Test call to number secondary number $backupnumber via proxy $proxy successfull";
+	        $exitcode=1;
+	}else{
+		$checkresponse = "CRITICAL: Test call to number $tonumber and test call to number $backupnumber via proxy $proxy $callerror";
+		$exitcode=2;
+	}
+}else{
+	$checkresponse = "CRITICAL: Test call to number $tonumber via proxy $proxy $callerror";
+	$exitcode=2;
+	
+}
+# mainloop until other party hangs up or we hang up after
+# $hangup seconds
+my $stopvar;
+$ua->add_timer( $hangup, \$stopvar ) if $hangup;
+$ua->loop( \$stopvar,\$peer_hangup );
+
+# timeout, I need to hang up
+if ( $stopvar ) {
+	$stopvar = undef;
+	if (!($callerror =~ m/Failed/)){
+		$checkresponse = "$checkresponse with an A-side bye";
+		$call->bye( cb_final => \$stopvar );
+		$ua->loop( \$stopvar );
+	}
+}else{
+	$checkresponse = "$checkresponse with an B-side bye";
+}
+if (-s $outfile){
+	$checkresponse = "$checkresponse and good media\n";
+}else{
+	$checkresponse = "$checkresponse and no media\n";
+	$exitcode=2;
+}
+###############
+#We need to delete the medio outfile#
+`rm -rf $outfile`;
+###############
+print "$checkresponse";
+exit $exitcode;

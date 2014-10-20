@@ -1,0 +1,448 @@
+#!/usr/bin/perl
+
+
+## Script written by Noah Guttman and Copyright (C) 2011 Noah Guttman. This script is released and distributed under the terms of the GNU General Public License
+
+#Libraries to use
+use FindBin qw($Bin);
+use lib "/usr/lib/perl5/5.8.8/";
+use lib "/usr/lib/perl5/5.8.8/Getopt/";
+use lib "$Bin/../lib",    "$Bin/../etc",    "$Bin/../perl/lib";
+use lib "$Bin/../../lib", "$Bin/../../etc", "$Bin/../../perl/lib";
+
+use warnings;
+use strict;
+use Getopt::Long;
+use Mail::Sendmail;
+
+my $datapath;
+my ($debug, $check_type);
+my $statistic="";
+my ($network, $netmask);
+my $extra_filter;
+my $filter;
+my ($to_email, $from_email);
+my $filename;
+my $protocol='';
+my $topX = 30;
+my $relative_start_time = "600s";
+my $relative_end_time=0;
+my $minimum_packets= 0;
+my $check_types = "Media,SIP,SSH,mySQL,DNS,ICMP,FTP,HTTP,HTTPS,ENUM,EverythingElse,Custom";
+my $checks_with_protools = "SIP,DNS,ENUM,EverythingElse";
+my $protocols = "UDP,TCP";
+my $statistics = "PACKETS,BYTES,FLOWS";
+my $exitcode=0;
+my $start_time;
+my $end_time;
+my $warning=1;
+my $critical=1;
+my $query_string;
+my $raw_data="";
+my @lines;
+my $temp_source;
+my @sources;
+my $temp_data;
+my @data_values;
+my $units;
+my $rank;
+my $data_file="";
+my $file_timestamp;
+my $non_matches=0;
+
+my @suspect_IPs;
+my $secondary_query="";
+my $seconday_raw_data;
+my $seconday_data_output="";
+my %mail;
+
+my $connect;
+my $query;
+my $query_handle;
+GetOptions(
+	'g|data-path=s' => \$datapath,
+        'd|debug' => \$debug,
+        'h|help' => sub { usage() },
+	't|type=s' => \$check_type,
+	'w|warning=i' => \$warning,
+	'c|critical=i' => \$critical,
+        'y|protocol=s' => \$protocol,
+        'r|results=i' => \$topX,
+        's|statistic=s' => \$statistic,
+	'n|network=s' => \$network,
+	'm|netmask=i' => \$netmask,
+	'f|filter=s'  => \$extra_filter,
+	'a|relative-start-time=s' => \$relative_start_time,
+	'z|relative-end-time=s' => \$relative_end_time,
+	'e|to-email=s' =>\$to_email,
+	'o|from-email=s' =>\$from_email,
+	'l|filename=s' =>\$filename,
+	'k|minimum-packets=i' =>\$minimum_packets,
+) || usage();
+
+unless ($datapath){
+        $exitcode = 3;
+        print "*** No data path specified ***\n\n";
+        usage();
+}
+unless ($check_types =~/$check_type/){
+	$exitcode =3;
+	print "*** Invalid check specified: $check_type ***\n\n";
+	usage();
+}
+if ($checks_with_protools =~/$check_type/){
+	unless ($protocols =~/$protocol/){
+		$exitcode =3;
+	        print "*** Invalid protocol specified: $protocol ***\n\n";
+		usage();
+	}
+}else{
+	if ($protocol =~/./){
+		$exitcode =3;
+                print "*** This check type does not support the protocol option ***\n\n";
+                usage();
+	}else{
+		$protocol =  "NA"
+	}
+}
+if ($topX < 1){
+	print "*** You must request at least one result ***\n";
+	exit 3;
+}
+if ($statistics =~m/$statistic/){
+        $exitcode =3;
+        print "*** Invalid statistic specified: $statistic***\n\n";
+        usage();
+}
+unless ($network =~m/^(\d\d?\d?)\.(\d\d?\d?)\.(\d\d?\d?)\.(\d\d?\d?)/ && ( $1 <= 255 && $2 <= 255 && $3 <= 255 && $4 <= 255 ) && ( $1 >= 1 && $2 >= 0 && $3 >= 0 && $4 >= 0 )){
+        $exitcode =3;
+        print "*** Invalid network specified: $network***\n\n";
+        usage();
+}   
+unless (($netmask < 32) && ($netmask >1)){
+        $exitcode =3;
+        print "*** Invalid network netmask specified: $netmask***\n\n";
+        usage();
+}
+if ($relative_start_time =~/\d+\D{1}\Z/){
+	my $temp = substr($relative_start_time, 0, -1);
+#	print "$temp\n";
+	if ($relative_start_time =~/\d+s/){
+		$start_time = `date -d \"$temp seconds ago\" +\%F\.\%R\:\%S`;
+		$file_timestamp = `date -d \"$temp seconds ago\" +\%Y\/\%m\/\%d\.\%I\.\%M\.\%S`;
+	}elsif ($relative_start_time =~m/\d+m/){
+               $start_time = `date -d \"$temp minutes ago\" +\%Y\/\%m\/\%d\.\%R\:\%S`;
+		$file_timestamp = `date -d \"$temp minutes ago\" +\%F\.\%I\.\%M.\%S`;
+        }elsif ($relative_start_time =~m/\d+h/){
+                $start_time = `date -d \"$temp hours ago\" +\%Y\/\%m\/\%d\.\%R\:\%S`;
+		$file_timestamp = `date -d \"$temp hours ago\" +\%F\.\%I\.\%M.\%S`;
+        }elsif ($relative_start_time =~m/\d+d/){
+                $start_time = `date -d \"$temp days ago\" +\%Y\/\%m\/\%d\.\%R\:\%S`;
+		$file_timestamp = `date -d \"$temp days ago\" +\%F\.\%I\.\%M.\%S`;
+	}else{
+	        $exitcode =3;
+	        print "*** Invalid relative start time specified : $relative_start_time***\n\n";
+	        usage();
+	}
+	chomp($start_time);
+#	print "$start_time\n";
+}elsif ($relative_start_time =~/.+/){
+	$exitcode =3;
+        print "*** Invalid relative start time specified : $relative_start_time***\n\n";
+        usage();
+}
+if ($relative_end_time =~/\d+\D{1}\Z/){
+        my $temp = substr($relative_end_time, 0, -1);
+#        print "$temp\n";
+        if ($relative_end_time =~/\d+s/){
+                $end_time = `date -d \"$temp seconds ago\" +\%Y\/\%m\/\%d\.\%R\:\%S`;
+        }elsif ($relative_end_time =~m/\d+m/){
+               $end_time = `date -d \"$temp minutes ago\" +\%Y\/\%m\/\%d\.\%R\:\%S`;
+        }elsif ($relative_end_time =~m/\d+h/){
+                $end_time = `date -d \"$temp hours ago\" +\%Y\/\%m\/\%d\.\%R\:\%S`;
+        }elsif ($relative_end_time =~m/\d+d/){
+                $end_time = `date -d \"$temp days ago\" +\%Y\/\%m\/\%d\.\%R\:\%S`;
+        }else{
+                $exitcode =3;
+                print "*** Invalid relative end time specified : $relative_end_time***\n\n";
+                usage();
+        }
+	chomp($end_time);
+#        print "$end_time\n";
+}elsif (($relative_end_time =~/.+/) && ($relative_end_time !=0)){
+        $exitcode =3;
+        print "*** Invalid relative end time specified : $relative_end_time***\n\n";
+        usage();
+}
+
+#start code here
+$query_string = "/usr/local/nagios/bin/nfdump -R $datapath -A srcip4/24,dstip4/$netmask -O $statistic -c $topX -N -q";
+$secondary_query = "/usr/local/nagios/bin/nfdump -R $datapath -A srcip,dstip4/$netmask -O $statistic -c $topX -N -q";
+
+if ($check_type =~/Media/){
+	$filter = "proto UDP";
+	$protocol = "UDP";
+}elsif ($check_type =~/SIP/){
+	$filter = "proto $protocol and port 5060";
+}elsif ($check_type =~/SSH/){
+	$filter = "port 22";
+}elsif ($check_type =~/mySQL/){
+	$filter = "port 3306";
+}elsif ($check_type =~/DNS/){
+	$filter = "prot $protocol and port 53";
+}elsif ($check_type =~/ICMP/){
+	$filter = "proto ICMP";
+	$protocol = "ICMP";
+}elsif ($check_type =~/FTP/){
+	$filter = "port 20";
+}elsif ($check_type =~/HTTP/){
+	$filter = "proto TCP and port 80";
+	$protocol = "TCP";
+}elsif ($check_type =~/HTTPS/){
+	$filter = "proto TCP and port 443";
+	$protocol = "TCP";
+}elsif ($check_type =~/ENUM/){
+	$filter = "proto $protocol and port 9053";
+}elsif ($check_type =~/EverythingElse/){
+	$filter = "proto $protocol and not port 5060 and not port 22 and not port 53 and not port 20 and not port 80 and not port 443 and not port 9053"; 
+}elsif ($check_type =~/Custom/){
+	unless ($extra_filter){
+		$exitcode =3;
+        	print "*** The custom checktype requres that you define a filter: $check_type ***\n\n";
+        	usage();
+	}else{
+		$filter = $extra_filter;
+		$extra_filter = undef;
+	}
+}
+
+
+if ($network){
+	if ($extra_filter){
+		$query_string .= " \"$filter and net $network\/$netmask $extra_filter\"";
+		$secondary_query .= " \"$filter and net $network\/$netmask $extra_filter";
+	}else{
+		$query_string .= " \"$filter and net $network\/$netmask\"";
+		$secondary_query .= " \"$filter and net $network\/$netmask";
+		$extra_filter="";
+	}
+}else{
+	if ($extra_filter){
+		$query_string .= " \"$filter and $extra_filter\"";
+		$secondary_query .= " \"$filter and $extra_filter";
+	}else{
+		$query_string .= " \"$filter\"";
+		$secondary_query .= " \"$filter";
+		$extra_filter="";
+	}
+}
+if ($statistic =~/packets/i){
+	$units = "";
+	$query_string .= " -ofmt:%sn%pkt";
+}elsif ($statistic =~/bytes/i){
+	$units = "B";
+	$query_string .= " -ofmt:%sn%byt";
+}elsif ($statistic =~/flows/i){
+	$units = "";
+	$query_string .= " -ofmt:%sn%fl";
+}
+if ($minimum_packets){
+	$query_string .= " -l $minimum_packets";
+}
+
+if ($relative_start_time){
+	$query_string .= " -t $start_time";
+	if ($relative_end_time){
+		$query_string .= "-$end_time";
+	}else{
+		$end_time = `date`;
+	}
+}
+$query_string .= "| awk \'{print \$1 \"\ \" \$2}\'";
+
+#print "***Query***\n$query_string\n*******\n";
+
+
+$raw_data = `$query_string`;
+
+#print "***Raw data***\n$raw_data*******\n";
+@lines = split("\n",$raw_data);
+
+unless ($#lines > 0){
+	print ("Query returned no data\n");
+	$exitcode = 3;
+	exit ($exitcode);
+}
+foreach my $entry (@lines){
+	if ($entry =~ m/\d+\.\d+\.\d+\.\d+/){
+		($temp_source, $temp_data) = split(" ",$entry);
+		push @sources, $temp_source;
+		push @data_values, $temp_data;
+	}
+}
+
+#for (my $i=0; $i <= $#sources; $i++) {
+#	print "Source: $sources[$i] Value: $data_values[$i]\n";
+#}
+if ($filename){
+	if (-e $filename){
+		$data_file = `cat $filename`;
+	}else{
+		$exitcode =3;
+        	print "*** File $filename not found ***\n\n";
+        	usage();
+	}
+	foreach my $entry (@sources){
+		unless ($data_file =~m/$entry/){
+			push @suspect_IPs, $entry; 
+			$non_matches++;
+		}
+	}
+	if ($non_matches > 0){ 
+		foreach my $IP (@suspect_IPs){
+			$IP = substr($IP, 0, -2);
+			if ($statistic =~/packets/i){
+				$seconday_raw_data .= `$secondary_query and net $IP\/24\" -o \"fmt:%sa\" | awk \'{print \$1}\'`;
+			}elsif ($statistic =~/bytes/i){
+                                $seconday_raw_data .= `$secondary_query and net $IP\/24\" -o \"fmt:%sa\" | awk \'{print \$1}\'`;
+			}elsif ($statistic =~/flows/i){
+                                $seconday_raw_data .= `$secondary_query and net $IP\/24\" -o \"fmt:%sa\" | awk \'{print \$1}\'`;
+			}
+		}
+		@lines = split("\n",$seconday_raw_data);
+		foreach my $entry (@lines){
+			$seconday_data_output .= "$entry, ";
+		}
+	}
+	if ($non_matches >=$critical){
+		print ("CRITCIAL: There were $non_matches suspect network(s) with high levels of traffic. The suspect IP(s) are: $seconday_data_output|");
+		$exitcode =2;
+	}elsif ($non_matches >=$warning){
+		print ("WARNING: There were $non_matches suspect network(s) with high levels of traffic. The suspect IP(s) are: $seconday_data_output|");
+		$exitcode =1;
+	}elsif ($non_matches > 0){
+		print ("OK: There were a permitted number of suspect network(s). The suspect IP(s) are: $seconday_data_output|");
+		$exitcode =0;
+	}else{
+                print ("OK: There were no suspect networks|");
+                $exitcode =0;
+        }	
+}else{
+	$exitcode =0;
+	for (my $i=0; $i <= $#sources; $i++){
+		if ($data_values[$i] >=$critical){
+			$exitcode =2;
+			push @suspect_IPs, $sources[$i];
+			$non_matches++;
+		}elsif ($data_values[$i] >=$warning){
+			if ($exitcode !=2){
+				$exitcode =1;
+			}
+			push @suspect_IPs, $sources[$i];
+                        $non_matches++;
+		}
+	}
+        unless ($exitcode ==0){
+                foreach my $IP (@suspect_IPs){
+                        $IP = substr($IP, 0, -2);
+                        if ($statistic =~/packets/i){
+                                $seconday_raw_data .= `$secondary_query and net $IP\/24\" -o \"fmt:%sa\" | awk \'{print \$1}\'`;
+                        }elsif ($statistic =~/bytes/i){
+                                $seconday_raw_data .= `$secondary_query and net $IP\/24\" -o \"fmt:%sa\" | awk \'{print \$1}\'`;
+                        }elsif ($statistic =~/flows/i){
+                                $seconday_raw_data .= `$secondary_query and net $IP\/24\" -o \"fmt:%sa\" | awk \'{print \$1}\'`;
+                        }
+                }
+		@lines = split("\n",$seconday_raw_data);
+	        foreach my $entry (@lines){
+	                $seconday_data_output .= "$entry, ";
+	        }
+        }
+
+        if ($exitcode==2){
+                print ("CRITCIAL: There were $non_matches suspect network(s) with high levels of traffic. The suspect IP(s) are: $seconday_data_output|");
+        }elsif ($exitcode==1){
+                print ("WARNING: There were $non_matches suspect network(s) with high levels of traffic. The suspect IP(s) are: $seconday_data_output|");
+        }else{
+                print ("OK: There were no suspect networks|");
+                $exitcode =0;
+        }
+
+}
+
+if ($to_email){
+	unless ($exitcode ==0){
+		$exitcode =0;
+		unless ($from_email) {
+			$from_email = "nagios\@localhost.net";
+		}
+        	%mail = ( To => "$to_email",
+        	From    => "$from_email",
+        	Subject => "Suspect $check_type traffic to $network/$netmask starting from $file_timestamp",
+        	Message => "Suspect traffic report\n\nFrom $start_time to $end_time  \n\nCheck of $check_type $statistic over $protocol \n\nWith extra filter: $extra_filter \nSuspect IP(s) which were not found in previous report($filename):\n$seconday_raw_data"
+		);
+        	sendmail(%mail) or die $Mail::Sendmail::error;
+		$exitcode =0;
+	}
+}
+
+#Return the data with nagios performance data
+for (my $i=0; $i <= $#sources; $i++) {
+        print "$sources[$i]"."="."$data_values[$i]"."$units;; ";
+}
+print ("\n");
+exit ($exitcode);
+
+## Display Help
+sub usage {
+	print "::NFDUMP Alert Check Instructions::\n\n";
+	print " -h|--help,        Display this help information\n";
+	print " -d|--debug,       Turn on Debug\n";
+	print " -r|--data-path,     Full path of the data directory\n";
+	print " -C|--check,       Specify a check type: Media, SIP, SSH, mySQL, DNS, \n";
+	print "                     ICMP, FTP, HTTP, HTTPS, ENUM, EverythingElse, Custom\n";
+	print "                      If you use the Custom check type you must define a filter\n";
+        print " -y|--protocol,    Specify a Protocol - Used for SIP,DNS,ENUM only: UPD, TCP\n";
+        print " -r|--results,     How many entries do you want to return - Default is 30\n";
+        print " -s|--statistic,   Field to use: packets, bytes, flows\n";
+        print " -n|--network,     Destination network: WWW.XXX.YYY.ZZZ\n";
+	print " -m|--netmask,     Desnination netmask: 23,24,27,etc\n";
+        print " -a|--relative-start-time,\n";
+	print "                   How far back to start looking at data (in s, m, h, or d) Defaults to 600s\n";
+        print " -z|--relative-end-time,\n";
+        print "                   How far back from current to stop looking at data (in s, n, h, or d). Defaults to 0s\n";
+        print "***** The switches below are optional *****\n";
+	print " -w|--warning,     Return a warning if the top value is over what is specified.\n";
+	print "                    If a report file is specified, the return a warning if there are more than\n";
+	print "                    the specified number of new entries not in the report file. - Default is 1\n";
+	print " -c|--critical,    Return a critical if the top value is over what is specified.\n";
+        print "                    If a report file is specified, the return a CRITICAL if there are more than\n"; 
+        print "                    the specified number of new entries not in the report file. - Default is 1\n";
+        print " -f|--filter,      Additional filter(s) - For users of nfdump\n";
+        print " -k|--minimum-packets,\n";
+        print "                     Filter out sources with fewer than this many packets. - Default is 0\n";
+        print "** To email the report **\n";
+        print "** If you define an email then the check will always return an OK exit code.\n";
+	print "** Emails will be sent if any threshold is passed.\n";
+        print " -e|to-email,      Email address to send the results\n";
+	print "                    You will need to a \\ prior to the @ for this to work EX. report\\\@company.net\n";
+	print " -o|from-email,    Email address to use for the From field - Default is nagios\\\@localhost.net\n";
+        print "** To read a report from a file **\n";
+	print " -l|filename,      Full filename (with path) where you desire the report.\n";
+        print " 	            This option will automatically rotate the old file out.\n";
+        print "Script written by Noah Guttman and Copyright (C) 2014 Noah Guttman.\n";
+        print "This script is released and distributed under the terms of the GNU\n";
+        print "General Public License.     >>>>    http://www.gnu.org/licenses/\n";
+        print "";
+        print "This program is free software: you can redistribute it and/or modify\n";
+        print "it under the terms of the GNU General Public License as published by\n";
+        print "the Free Software Foundation.\n\n";
+        print "This program is distributed in the hope that it will be useful,\n";
+        print "but WITHOUT ANY WARRANTY; without even the implied warranty of\n";
+        print "MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n";
+        print "GNU General Public License for more details.\n";
+        print ">>>>    http://www.gnu.org/licenses/\n";
+        exit ($exitcode); 
+}
+
+

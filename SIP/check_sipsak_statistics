@@ -1,0 +1,147 @@
+#!/usr/bin/perl
+
+
+## Script written by Noah Guttman and Copyright (C) 2011 Noah Guttman. This script is released and distributed under the terms of the GNU General Public License
+
+#Libraries to use
+use lib "/usr/local/nagios/perl/lib";
+use lib "/usr/local/nagios/libexec/";
+#use strict;
+use Getopt::Std;
+use Mysql;
+use DBI;
+
+use Time::HiRes qw(gettimeofday ualarm);
+use utils qw($TIMEOUT %ERRORS &print_revision &support);
+use vars qw($PROGNAME);
+use IO::Socket::INET;
+
+use vars qw($opt_h $opt_H $opt_V $opt_P);
+$opt_t = 4;
+
+my $returnmessage = " ";
+my $result = " ";
+
+my $returnname=" ";
+my $rawPerformance=" ";
+my @performance;
+my $performanceMin=" ";
+my $performanceMax=" ";
+my $performanceAvg=" ";
+my $performanceOutput=" ";
+
+
+my $RELOAD_RESULT;
+my $i;
+
+my $result=" ";
+my @gah;
+
+
+
+my $exitcode=3;
+
+my $threadsinroute;
+
+
+##init();
+
+# Get the options
+if ($#ARGV le 0) {
+        print "::Options SIP Statistics Check Instructions::\n\n";
+        print " -h,             Display this help information\n";
+        print " -H,             Hostname or IP to check\n";
+        print " -V,             Hostname or IP to use in the Via Header (optional)\n";
+        print " -P,             Port to test\n";
+        print "                  The default is 5060\n";
+        print "Script written by Noah Guttman and Copyright (C) 2011 Noah Guttman.\n";
+        print "This script is released and distributed under the terms of the GNU\n";
+        print "General Public License.     >>>>    http://www.gnu.org/licenses/\n";
+        print "";
+        print "This program is free software: you can redistribute it and/or modify\n";
+        print "it under the terms of the GNU General Public License as published by\n";
+        print "the Free Software Foundation.\n\n";
+        print "This program is distributed in the hope that it will be useful,\n";
+        print "but WITHOUT ANY WARRANTY; without even the implied warranty of\n";
+        print "MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n";
+        print "GNU General Public License for more details.\n";
+        print ">>>>    http://www.gnu.org/licenses/\n";
+        exit 0;
+} else {
+	getopts('hH:P:V:');
+}
+
+
+## Display Help
+if ($opt_h){
+        print "::Options SIP StatisticsCheck Instructions::\n\n";
+        print " -h,             Display this help information\n";
+        print " -H,             Hostname or IP to check\n";
+        print " -V,             Hostname or IP to use in the Via Header (optional)\n";
+        print " -P,             Port to test\n";
+        print "                  The default is 5060\n";
+        print "Script written by Noah Guttman and Copyright (C) 2011 Noah Guttman.\n";
+        print "This script is released and distributed under the terms of the GNU\n";
+        print "General Public License.     >>>>    http://www.gnu.org/licenses/\n";
+        print "";
+        print "This program is free software: you can redistribute it and/or modify\n";
+        print "it under the terms of the GNU General Public License as published by\n";
+        print "the Free Software Foundation.\n\n";
+        print "This program is distributed in the hope that it will be useful,\n";
+        print "but WITHOUT ANY WARRANTY; without even the implied warranty of\n";
+        print "MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n";
+        print "GNU General Public License for more details.\n";
+        print ">>>>    http://www.gnu.org/licenses/\n";
+        exit 0;
+}
+
+
+
+##Set custom output if any set
+if ($opt_M){
+	$returnmessage=$opt_M;
+}else{
+	$returnmessage="";
+}
+
+if ($opt_w){
+        $warning=$opt_w;
+}else{
+        $warning=3;
+}
+if !($opt_V){
+	$opt_V = $opt_H;
+}
+
+
+# Timeout if we don't recieve a response within a suitable timeframe..
+$SIG{'ALRM'} = sub {
+        print ("$opt_R $opt_H $opt_P CRITICAL: Test has not completed in 10 seconds. $result $opt_M\n");
+        exit(2);
+};
+ualarm(10000000);
+
+
+#Check that each thread is responding
+$result = (`/usr/local/bin/sipsak -s sip:opsview\@$opt_H -H $opt_V -r $opt_P -A 10\; echo \$?`);
+#print (@gah);
+@gah = split('\n', $result);
+#print (@gah);
+$rawPerformance = (shift(@gah));
+#print ("$rawPerformance \n");
+@performance = split(/\//, $rawPerformance);
+$performanceMin = (shift(@performance)."ms");
+$performanceAvg = (shift(@performance)."ms");
+$performanceMax = (shift(@performance));
+$performanceMax = (substr $performanceMax,0,5)."ms" ;
+$result = (shift(@gah));
+$exitcode = (shift(@gah));
+#print ("Exit Code: $exitcode \n");
+if ($exitcode == 0){
+	print ("$opt_H $opt_P Responded OK: $result ");
+}else{
+	print ("UNKNOWN: $result ");
+}
+print ("|ReturnMin=$performanceMin;;;; ReturnAvg=$performanceAvg;;;; ReturnMax=$performanceMax;;;;\n");
+exit ($exitcode);
+

@@ -1,0 +1,116 @@
+#!/usr/bin/perl
+
+
+## Script written by Noah Guttman and Copyright (C) 2011 Noah Guttman. This script is released and distributed under the terms of the GNU General Public License
+
+#Libraries to use
+#use strict;
+use lib "/usr/local/nagios/perl/lib";
+use lib "/usr/local/nagios/libexec/";
+use Getopt::Std;
+use Time::HiRes qw(gettimeofday ualarm);
+use utils qw($TIMEOUT %ERRORS &print_revision &support);
+
+use vars qw($opt_h $opt_H $opt_w $opt_V $opt_M $opt_P $opt_R);
+$opt_t = 4;
+$opt_R = '';
+
+my $returnmessage = "";
+my $result = "";
+
+my $returnname="";
+my $rawPerformance="";
+my @performance;
+my $performanceMin="";
+my $performanceMax="";
+my $performanceAvg="";
+my $performanceOutput="";
+my $warning=3;
+
+my @gah;
+
+my $exitcode=3;
+
+##init();
+
+# Get the options
+if ($#ARGV le 0) {
+	$opt_h=1;
+} else {
+	getopts('hH:w:M:P:V:R:');
+}
+
+
+## Display Help
+if ($opt_h){
+        print "::Check Sipsak Usage Check Instructions::\n\n";
+        print " -h,             Display this help information\n";
+        print " -H,             Hostname or IP to check\n";
+        print " -V,             Hostname or IP to use in the Via Header (optional)\n";
+        print " -w,             Specify a the number of retransits for the checkfor the check to be considered a warning\n";
+        print "                  The default is 3 failure\n";
+        print " -M,             Specify a message to return on failure\n";
+        print " -P,             Port to test\n";
+        print "                  The default is 5060\n";
+        print " -R,             Restart command to use - For event handler use\n";
+        print "Script written by Noah Guttman and Copyright (C) 2011 Noah Guttman.\n";
+        print "This script is released and distributed under the terms of the GNU\n";
+        print "General Public License.     >>>>    http://www.gnu.org/licenses/\n";
+        print "\n";
+        print "This program is free software: you can redistribute it and/or modify\n";
+        print "it under the terms of the GNU General Public License as published by\n";
+        print "the Free Software Foundation.\n\n";
+        print "This program is distributed in the hope that it will be useful,\n";
+        print "but WITHOUT ANY WARRANTY; without even the implied warranty of\n";
+        print "MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n";
+        print "GNU General Public License for more details.\n";
+        print ">>>>    http://www.gnu.org/licenses/\n";
+        exit 0;
+}
+
+
+
+##Set custom output if any set
+if ($opt_M){
+	$returnmessage=$opt_M;
+}
+
+if ($opt_w){
+        $warning=$opt_w;
+}
+if (!$opt_V){
+	$opt_V = $opt_H;
+}
+
+# Timeout if we don't recieve a response within a suitable timeframe..
+$SIG{'ALRM'} = sub {
+        print ("$opt_R $opt_H $opt_P CRITICAL: Test has not completed in 10 seconds. $result $returnmessage\n");
+        exit(2);
+};
+ualarm(10000000);
+#Check that each thread is responding
+$result = (`/usr/local/bin/sipsak -s sip:opsview\@$opt_H -H $opt_V -r $opt_P -N -A 5 -W $warning`);
+#print (@gah);
+@gah = split('\n', $result);
+#print (@gah);
+$rawPerformance = (shift(@gah));
+#print ("$rawPerformance \n");
+@performance = split(/\//, $rawPerformance);
+$performanceMin = (shift(@performance)."ms");
+$performanceAvg = (shift(@performance)."ms");
+$performanceMax = (shift(@performance));
+$performanceMax = (substr $performanceMax,0,5)."ms" ;
+#print ("Exit Code: $exitcode \n");
+if ($result=~/SIP\\sok/){
+        print ("OK: $result ");
+        print ("|ReturnMin=$performanceMin;;;; ReturnAvg=$performanceAvg;;;; ReturnMax=$performanceMax;;;;\n");
+	$exitcode = 0;
+}elsif ($result=~/SIP\\sfailure/){
+        print ("$opt_R $opt_H $opt_P CRITICAL: $result $returnmessage\n");
+	$exitcode = 2;
+}else{
+	print ("$opt_R $opt_H $opt_P UNKNOWN: $result $returnmessage\n");
+}
+
+exit ($exitcode);
+

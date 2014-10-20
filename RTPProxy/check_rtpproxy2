@@ -1,0 +1,189 @@
+#!/usr/bin/perl
+
+
+## Script written by Noah Guttman and Copyright (C) 2014 Noah Guttman. This script is released and distributed under the terms of the GNU General Public License
+
+#Libraries to use
+use warnings;
+use strict;
+use Getopt::Std;
+use Time::HiRes qw(gettimeofday usleep);
+use IO::Socket;
+use threads;
+use threads::shared;
+
+use vars qw($opt_h $opt_H $opt_P $opt_t $opt_r $opt_d);
+
+my $baseport;
+
+my @output;
+my @line;
+my $val;
+
+my $sessions_created='';
+my $active_sessions='';
+my $active_streams='';
+my $remaining_calls='';
+my $gah :shared;
+$gah ="";
+my $testerrortotal=0;
+my $response_timeout=0;
+
+my $elapsed=1000;
+my $debug_output="";
+my $exitcode=3;
+my $icmp_responsed :shared;
+$icmp_responsed = 0;
+my $timeout=1000000;
+my $retries=4;
+my $errors=0;
+
+my $timer =0;
+
+my $sock;
+my $recvthread;
+##init();
+
+# Get the options
+if ($#ARGV le 0) {
+	$opt_h=1;
+} else {
+	getopts('hdH:P:t:r:');
+}
+
+
+## Display Help
+if ($opt_h){
+	print "::RTPproxy Check Instructions::\n\n";
+	print " -h,		Display this help information\n";
+	print " -H,		Hostname or IP to check\n";
+        print " -P,		Port to monitor\n";
+        print "                  The default is 7899\n";
+        print " -t,             Timeout (ms) for each communication attempt.\n";
+        print "                  The default is 1000\n";
+        print " -r,             Number of times to retry communications.\n";
+        print "                  The default is 4\n";
+        print " -d,             Turn on debug mode - prints out packet(s) recived.\n";
+        print "Script written by Noah Guttman and Copyright (C) 2014 Noah Guttman.\n";
+        print "This script is released and distributed under the terms of the GNU\n";
+        print "General Public License.     >>>>    http://www.gnu.org/licenses/\n";
+        print "";
+        print "This program is free software: you can redistribute it and/or modify\n";
+        print "it under the terms of the GNU General Public License as published by\n";
+        print "the Free Software Foundation.\n\n";
+        print "This program is distributed in the hope that it will be useful,\n";
+        print "but WITHOUT ANY WARRANTY; without even the implied warranty of\n";
+        print "MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n";
+        print "GNU General Public License for more details.\n";
+        print ">>>>    http://www.gnu.org/licenses/\n";
+        exit 0; 
+}
+
+
+
+
+##Set custom output if any set
+
+if ($opt_P){
+        $baseport=$opt_P;
+}else{
+        $baseport=7899;
+}
+if ($opt_t){
+        $timeout=$opt_t*1000;
+}
+if ($opt_r){
+        $retries=$opt_r;
+}
+
+
+
+
+#Check that the thread is responding
+while ($testerrortotal<$retries){
+        $sock = IO::Socket::INET->new(
+        Proto    => 'udp',
+        PeerPort => $baseport,
+        PeerAddr => $opt_H,
+        ) or die "Could not create socket: $!\n";
+	
+	$recvthread = threads->new( \&recive_rtpproxy_request);
+#	sleep (1);
+	usleep(10000);
+        my $starttime = gettimeofday;
+	$sock->send("opsview_123456789 Ib") or die "Send error: $!\n";
+
+	#reset timer
+	$timer =0;
+	while (($timer <= $timeout ) && ($gah !~ /.*[\n,\r].*[\n,\r].*[\n.\r]/i)){
+		usleep(2000);
+		$timer = $timer + 2000;
+	}
+	#reset timer
+	$timer =0;
+
+        $elapsed = (gettimeofday - $starttime)*1000;
+
+	#reject bad time data
+        if ($elapsed < 0){
+                $elapsed='';
+        }
+
+	if ($opt_d){
+                $debug_output = $debug_output."\n------------------------------\nDEBUG:$gah\n------------------------------\n";
+        }
+
+	if ((($gah =~ /opsview_123456789 sessions created/i) && ($gah =~ /active sessions/i)) && ($gah =~ /active streams/i)){
+		$recvthread->join();
+		@output = split ("\n",$gah);
+		foreach my $val (@output) {
+			if ($val =~ /sessions created/i) {
+				@line = split (":", $val);
+				$sessions_created = substr($line[1],1)."C";
+			}elsif ($val =~ /active sessions/i){
+				@line = split (":", $val);
+                                $active_sessions = substr($line[1],1);
+			}elsif ($val =~ /active streams/i){
+                                @line = split (":", $val);
+                                $active_streams = substr($line[1],1);
+			}elsif ($val =~ /remaining calls/i){
+                                @line = split (":", $val);
+                                $remaining_calls = substr($line[1],1);
+			}
+		}
+		if ($testerrortotal == 0){
+			print ("OK: RTP Proxy $opt_H:$baseport responded in $elapsed ms. It has $active_sessions active sessions with $active_streams active streams and room for $remaining_calls additional calls.");
+			$exitcode = 0;
+		}else{
+                        print ("WARNING: RTP Proxy $opt_H:$baseport responded in $elapsed ms after $testerrortotal failures. It has $active_sessions active sessions with $active_streams active streams and room for $remaining_calls additional calls.");
+                        $exitcode = 1;
+		}
+		if ($opt_d){
+			print ("$debug_output");		
+		}
+		print ("|Active_Sessions=$active_sessions;; Active_Streams=$active_streams;; Sessions_Created=$sessions_created;; Additional_Capacity=$remaining_calls;; Response_Time=$elapsed"."ms;; ICMP=$icmp_responsed;; Errors=$errors;; Timeouts=$response_timeout;;\n");
+		exit ($exitcode);
+	}elsif ($icmp_responsed >$testerrortotal){
+		$recvthread->join();
+	}elsif ($gah =~ /./){
+                $errors++;
+		$recvthread->join();
+	}else{
+		$recvthread->detach;
+		$response_timeout++;
+	}
+	$testerrortotal++;
+}
+print ("CRITICAL: RTP Proxy $opt_H:$baseport has not responded correctly after $testerrortotal attempts.");
+$exitcode = 2;
+if ($opt_d){
+	print ("$debug_output");
+}
+print ("|Response_Time=$elapsed"."ms;; ICMP=$icmp_responsed;; Errors=$errors;; Timeouts=$response_timeout;;\n");
+exit ($exitcode);
+
+
+sub recive_rtpproxy_request{
+		$sock->recv($gah,128) or $icmp_responsed++;
+		$sock->close;
+}

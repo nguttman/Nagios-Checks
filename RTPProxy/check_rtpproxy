@@ -6,13 +6,21 @@
 #Libraries to use
 use strict;
 use Getopt::Std;
+use Mysql;
+use DBI;
 
-use vars qw($opt_h $opt_H $opt_M $opt_P);
+use vars qw($opt_h $opt_H $opt_M $opt_P $opt_u $opt_p $opt_d $opt_b);
 
-my $returnmessage = "";
+my $returnmessage = " ";
 my $baseport;
-my $returnname="";
+my $returnname=" ";
 
+my $USER="rtpXC";
+my $PASS="qpz-krtpXC";
+my $DB="TELXopensipsXC";
+my $DBHOST="208.76.18.58";
+
+my $i;
 my $n;
 my @output;
 my @line;
@@ -23,8 +31,12 @@ my $active_streams;
 
 my $gah;
 my $testerrortotal;
+my $connect;
+my $query;
+my $query_handle;
 
 my $exitcode=3;
+
 
 my $threadsinroute;
 
@@ -33,20 +45,48 @@ my $threadsinroute;
 
 # Get the options
 if ($#ARGV le 0) {
-	$opt_h = 1;
+        print "::Process Resource Usage Check Instructions::\n\n";
+        print " -h,             Display this help information\n";
+        print " -H,             Hostname or IP to check\n";
+        print " -M,             Specify a message to return on failure\n";
+        print " -P,             Port to monitor\n";
+        print "                  The default is 7899\n";
+        print " -u,             Username to connect to the database\n";
+        print " -p,             Password to connect to the database\n";
+        print " -d,             Database name\n";
+        print " -b,             Database hostname/IP\n";
+
+        print "Script written by Noah Guttman and Copyright (C) 2011 Noah Guttman.\n";
+        print "This script is released and distributed under the terms of the GNU\n";
+        print "General Public License.     >>>>    http://www.gnu.org/licenses/\n";
+        print "";
+        print "This program is free software: you can redistribute it and/or modify\n";
+        print "it under the terms of the GNU General Public License as published by\n";
+        print "the Free Software Foundation.\n\n";
+        print "This program is distributed in the hope that it will be useful,\n";
+        print "but WITHOUT ANY WARRANTY; without even the implied warranty of\n";
+        print "MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n";
+        print "GNU General Public License for more details.\n";
+        print ">>>>    http://www.gnu.org/licenses/\n";
+        exit 0;
 } else {
-	getopts('hH:M:P:');
+	getopts('hH:M:P:u:p:d:b:');
 }
 
 
 ## Display Help
 if ($opt_h){
-	print "::RtpProxy Check Instructions::\n\n";
+	print "::Process Resource Usage Check Instructions::\n\n";
 	print " -h,		Display this help information\n";
 	print " -H,		Hostname or IP to check\n";
         print " -M,		Specify a message to return on failure\n";
         print " -P,		Port to monitor\n";
         print "                  The default is 7899\n";
+        print " -u,             Username to connect to the database\n";
+        print " -p,             Password to connect to the database\n";
+        print " -d,             Database name\n";
+        print " -b,             Database hostname/IP\n";
+
         print "Script written by Noah Guttman and Copyright (C) 2011 Noah Guttman.\n";
         print "This script is released and distributed under the terms of the GNU\n";
         print "General Public License.     >>>>    http://www.gnu.org/licenses/\n";
@@ -69,7 +109,7 @@ if ($opt_h){
 if ($opt_M){
 	$returnmessage=$opt_M;
 }else{
-	$returnmessage="";
+	$returnmessage=" ";
 }
 
 if ($opt_P){
@@ -83,8 +123,8 @@ if ($opt_P){
 #Check that the thread is responding
 $testerrortotal = 0;
 for ($n=0; $n < 4; $n++){
-	$gah = (`echo \"nagios_123456789 I\"|nc -w 1 -D -u $opt_H $baseport`);
-	if ((($gah =~ /nagios_123456789 sessions created/i) && ($gah =~ /active sessions/i)) && ($gah =~ /active streams/i)){
+	$gah = (`echo \"opsview_123456789 Ib\"|nc -w 1 -D -u $opt_H $baseport`);
+	if ((($gah =~ /opsview_123456789 sessions created/i) && ($gah =~ /active sessions/i)) && ($gah =~ /active streams/i)){
 		chomp $gah;
 		@output = split ("\n",$gah);
 		foreach my $val (@output) {
@@ -110,7 +150,7 @@ for ($n=0; $n < 4; $n++){
 	$testerrortotal++;
 	sleep (1);
 }
-print ("CRITICAL: RTP Proxy $opt_H:$baseport has not responded correctly after $testerrortotal attempts. $opt_M|Errors=$testerrortotal;;\n");
+print ("CRITICAL: RTP Proxy $opt_H:$baseport has not responded correctly after $testerrortotal attempts.|Errors=$testerrortotal;;\n");
 exit 2;
 
 

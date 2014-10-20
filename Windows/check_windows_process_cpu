@@ -1,0 +1,121 @@
+#!/usr/bin/perl
+
+
+## Script written by Noah Guttman and Copyright (C) 2011 Noah Guttman. This script is released and distributed under the terms of the GNU General Public License
+
+#Libraries to use
+use Getopt::Std;
+use Time::HiRes qw(gettimeofday alarm);
+use warnings;
+use strict;
+
+use vars qw($opt_h $opt_H $opt_M $opt_P $opt_w $opt_c $opt_t);
+$opt_t =3;
+$opt_w =70;
+$opt_c =80;
+my $returnmessage = "";
+my $check;
+
+
+my $firstcheckresult;
+my $secondcheckresult;
+
+my $dtime;
+my $dcheck;
+my $result;
+my $alarmtime = 10;
+
+##init();
+
+# Get the options
+if ($#ARGV le 0) {
+	$opt_h =1;
+} else {
+	getopts('hH:M:P:w:c:t:');
+}
+
+
+## Display Help
+if ($opt_h){
+        print "::Windows Process CPU Check Instructions::\n\n";
+        print " -h,             Display this help information\n";
+        print " -H,             Hostname or IP to check\n";
+        print " -M,             Specify a message to return on failure\n";
+        print " -P,             Process to check\n";
+        print " -w,             Warning level (Default 70%)\n";
+        print " -c,             Warning level (Default 80%)\n";
+        print " -t,             Number of seconds to wait between CPU polls\n";
+        print "                  Default is 3 seconds\n";
+        print "Script written by Noah Guttman and Copyright (C) 2011 Noah Guttman.\n";
+        print "This script is released and distributed under the terms of the GNU\n";
+        print "General Public License.     >>>>    http://www.gnu.org/licenses/\n";
+        print "";
+        print "This program is free software: you can redistribute it and/or modify\n";
+        print "it under the terms of the GNU General Public License as published by\n";
+        print "the Free Software Foundation.\n\n";
+        print "This program is distributed in the hope that it will be useful,\n";
+        print "but WITHOUT ANY WARRANTY; without even the implied warranty of\n";
+        print "MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n";
+        print "GNU General Public License for more details.\n";
+        print ">>>>    http://www.gnu.org/licenses/\n";
+        exit 0;
+}
+
+##Set custom output if any set
+if ($opt_M){
+	$returnmessage=$opt_M;
+}else{
+	$returnmessage="";
+}
+
+# Just in case of problems, let's not hang Nagios
+$SIG{'ALRM'} = sub {
+        print ("ERROR: Plugin took too long to complete (alarm)\n");
+        exit 3;
+};
+$alarmtime = ($alarmtime + $opt_t);
+alarm($alarmtime);
+
+
+$check = ("-H $opt_H -c CheckWMI -a \"Query\=select PercentProcessorTime from Win32_PerfRAWData_PerfProc_Process where Name=\'$opt_P\'\"");
+my $starttime = gettimeofday;
+$firstcheckresult = (`/usr/local/nagios/libexec/check_nrpe $check`);
+if ($firstcheckresult !~/PercentProcessorTime/){
+        print ("Critical: $opt_P does not appear to be running. The WMI query returned: $firstcheckresult\n");
+        exit 2;
+}
+sleep ($opt_t);
+$secondcheckresult = (`/usr/local/nagios/libexec/check_nrpe $check`);
+my $finishtime = gettimeofday;
+$firstcheckresult = substr ($firstcheckresult, 21);
+chomp $firstcheckresult;
+$secondcheckresult = substr ($secondcheckresult, 21);
+chomp $secondcheckresult;
+$dcheck = ($secondcheckresult - $firstcheckresult);
+#Correct for microseconds and that we want it to be result in %
+$dtime = abs($finishtime - $starttime) *10000;
+$result = $dcheck / $dtime ; 
+
+#print ("R $result \n");
+#Reduce to 2 decimal places
+$result = (sprintf "%.2f", $result);
+
+#Now that we have the result we check it
+if ($result >= $opt_c){
+	print ("Critical: $opt_P is at $result \% CPU |cpu_usage=$result%;;;;\n");
+	exit 2;
+}elsif ($result >= $opt_w){
+        print ("Warning: $opt_P is at $result \% CPU |cpu_usage=$result%;;;;\n");
+        exit 1;
+}else{
+        print ("OK: $opt_P is at $result \% CPU |cpu_usage=$result%;;;;\n");
+        exit 0;
+}
+
+
+
+
+  
+#Code should never get this far
+print ("Something has gone wrong with the check: $opt_P is at $result \% CPU |cpu_usage=$result%;;;;\n");
+exit 3;

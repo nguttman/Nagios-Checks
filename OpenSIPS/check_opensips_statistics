@@ -1,0 +1,99 @@
+#!/usr/bin/perl
+
+## Script written by Noah Guttman and Copyright (C) 2011 Noah Guttman. This script is released and distributed under the terms of the GNU General Public License
+
+#Libraries to use
+use lib "/usr/lib/perl5/5.8.8/";
+use lib "/usr/lib/perl5/5.8.8/Getopt/";
+
+use warnings;
+use strict;
+use Getopt::Std;
+use Time::HiRes qw(alarm);
+our ($opt_h, $opt_P, $opt_w, $opt_c);
+
+my $warning;
+my $critical;
+
+my $real_shmem;
+my @output;
+my @temp;
+
+my $longoutput = ("|");
+my $stat;
+my $exitcode =3;
+my $alarmtime =10;
+
+getopts('hP:w:c:');
+
+## Display Help
+if ($opt_h){
+        print "::Opensips Statistics Instructions::\n\n";
+        print " -h,             Display this help information\n";
+        print " -P,             Specify the command path of the opensips you wish to get statistics from\n\n\n";
+        print "Script written by Noah Guttman and Copyright (C) 2011 Noah Guttman.\n";
+        print "This script is released and distributed under the terms of the GNU\n";
+        print "General Public License.     >>>>    http://www.gnu.org/licenses/\n";
+        print "";
+        print "This program is free software: you can redistribute it and/or modify\n";
+        print "it under the terms of the GNU General Public License as published by\n";
+        print "the Free Software Foundation.\n\n";
+        print "This program is distributed in the hope that it will be useful,\n";
+        print "but WITHOUT ANY WARRANTY; without even the implied warranty of\n";
+        print "MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n";
+        print "GNU General Public License for more details.\n";
+        print ">>>>    http://www.gnu.org/licenses/\n";
+        exit 0;
+}
+if (($opt_w) && ($opt_c)){
+        $warning = $opt_w * 1048576;
+        $critical = $opt_c * 1048576;
+}else{
+	$warning = (100 * 1048576);
+	$critical = (200 * 1048576);
+}
+
+if ($opt_P){
+        if (-e $opt_P){
+            #We have a path that exists
+        }else{
+        	print ("ERROR:The path specified ($opt_P) doesn't appear to be exist.\n");
+        	exit 3;
+        }
+}else{
+	print ("ERROR:The path specified ($opt_P) doesn't appear to be exist.\n");
+        exit 3;
+}
+$SIG{'ALRM'} = sub {
+        print ("ERROR: Plugin took too long to complete (alarm)\n");
+        exit 3;
+};
+alarm($alarmtime);
+
+@output = (`sudo $opt_P fifo get_statistics all|/bin/awk \'{print \$1\$2\$3}\'`);
+chomp(@output);
+foreach $stat (@output){
+	if ($stat =~/shmem:real_used_size/){
+		@temp = split("=",$stat);
+		$real_shmem = $temp[1];	
+		if ($real_shmem >= $critical){
+			$exitcode =2;
+			print ("CRITICAL: OpenSIPS is using $real_shmem Bytes of shared memory");
+		}elsif ($real_shmem >= $warning){
+			$exitcode =1;
+			print ("WARNING: OpenSIPS is using $real_shmem Bytes of shared memory");
+		}else{
+			$exitcode =0;
+			print ("OK: OpenSIPS is using $real_shmem Bytes of shared memory");
+		}
+	}
+	if ($stat =~/_size/){
+		$longoutput = ("$longoutput$stat"."B;; ");
+	}elsif (((($stat =~/_transactions/) || ($stat =~/_requests/)) ||($stat =~/_replies/)) || ($stat =~/received_ACKs/)){
+                $longoutput = ("$longoutput$stat"."C;; ");
+	}else{
+		$longoutput = ("$longoutput$stat;; ");
+	}
+}
+print ("$longoutput\n");
+exit ($exitcode);

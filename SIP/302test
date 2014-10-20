@@ -1,0 +1,26 @@
+INVITE sip:393207010166@$dsthost$:5060;user=phone SIP/2.0
+From: <sip:opsview@$srchost$:5060;user=phone>;tag=2lzxhxz0-CC-22
+Allow: INVITE,ACK,OPTIONS,BYE,CANCEL,REGISTER,INFO,PRACK,SUBSCRIBE,NOTIFY,UPDATE,MESSAGE,REFER
+User-Agent: Huawei SoftX3000 V300R010
+Supported: 100rel
+To: <sip:393891765875@$dsthost$:5060;user=phone>
+Call-ID: 1361762110@1.1.1.1
+Contact: <sip:233242158328@$srchost$:5060;user=phone;transport=udp>
+CSeq: 1 INVITE
+Max-Forwards: 66
+Content-Length: 296
+Content-Type: application/sdp
+
+v=0
+o=HuaweiSoftX3000 11995223 11995223 IN IP4 213.177.165.101
+s=Sip Call
+c=IN IP4 213.177.165.101
+t=0 0
+m=audio 61234 RTP/AVP 8 0 18 101
+a=rtpmap:8 PCMA/8000
+a=rtpmap:0 PCMU/8000
+a=rtpmap:18 G729/8000
+a=rtpmap:101 telephone-event/8000
+a=ptime:10
+a=fmtp:101 0-15
+a=fmtp:18 annexb=no
