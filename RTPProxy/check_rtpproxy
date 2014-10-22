@@ -5,9 +5,8 @@
 
 #Libraries to use
 use strict;
+use warnings;
 use Getopt::Std;
-use Mysql;
-use DBI;
 
 use vars qw($opt_h $opt_H $opt_M $opt_P);
 
