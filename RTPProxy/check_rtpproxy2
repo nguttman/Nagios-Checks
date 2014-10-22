@@ -185,5 +185,6 @@ exit ($exitcode);
 
 sub recive_rtpproxy_request{
 		$sock->recv($gah,128) or $icmp_responsed++;
+		#It is important to tell the diference between an ICMP repsone (indicating the port is closed) from a non-responsive process.
 		$sock->close;
 }
