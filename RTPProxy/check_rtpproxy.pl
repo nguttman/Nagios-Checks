@@ -21,10 +21,10 @@ my $critical;
 my $threads;
 my $returnname=" ";
 
-my $USER="rtpXC";
-my $PASS="qpz-krtpXC";
-my $DB="TELXopensipsXC";
-my $DBHOST="208.76.18.58";
+my $USER="";
+my $PASS="";
+my $DB="";
+my $DBHOST="";
 
 my $RELOAD_RESULT;
 my $i;
@@ -48,40 +48,12 @@ my $currentcalls=0;
 my $threadsinroute;
 
 
-my @OPENSIPS_MI_DATAGRAM_SOCKETS=("208.76.18.60 9191","208.76.18.57 9191","208.76.18.58 9191");
+my @OPENSIPS_MI_DATAGRAM_SOCKETS=("XXX.XXX.XXX.XXX 9191","XXX.XXX.XXX.XXX 9191","XXX.XXX.XXX.XXX 9191");
 ##init();
 
 # Get the options
 if ($#ARGV le 0) {
-        print "::Process Resource Usage Check Instructions::\n\n";
-        print " -h,             Display this help information\n";
-        print " -H,             Hostname or IP to check\n";
-        print " -w,             Specify a warning level for the check\n";
-        print "                  The default is 20% failure\n";
-        print " -c,             Specify a critical level for the check\n";
-        print "                  The default is 30% failure\n";
-        print " -t,             The number of tests to run per thread\n";
-        print "                  The default is 4\n";
-        print " -M,             Specify a message to return on failure\n";
-        print " -P,             Base port to monitor\n";
-        print "                  The default is 7899\n";
-	print " -u,             Username to connect to the database\n";
-	print " -p,             Password to connect to the database\n";
-	print " -d,             Database name\n";
-	print " -b,             Database hostname/IP\n";
-        print "Script written by Noah Guttman and Copyright (C) 2011 Noah Guttman.\n";
-        print "This script is released and distributed under the terms of the GNU\n";
-        print "General Public License.     >>>>    http://www.gnu.org/licenses/\n";
-        print "";
-        print "This program is free software: you can redistribute it and/or modify\n";
-        print "it under the terms of the GNU General Public License as published by\n";
-        print "the Free Software Foundation.\n\n";
-        print "This program is distributed in the hope that it will be useful,\n";
-        print "but WITHOUT ANY WARRANTY; without even the implied warranty of\n";
-        print "MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n";
-        print "GNU General Public License for more details.\n";
-        print ">>>>    http://www.gnu.org/licenses/\n";
-        exit 0;
+	$opt_h=1;
 } else {
 	getopts('hH:w:c:M:P:u:p:d:b:t:');
 }
@@ -119,6 +91,10 @@ if ($opt_h){
         print "GNU General Public License for more details.\n";
         print ">>>>    http://www.gnu.org/licenses/\n";
         exit 0; 
+}
+unless ($opt_b){
+	print ("You must define an OpenSIPS database to check against\n");
+	exit 3;
 }
 
 if ($opt_u){
@@ -160,7 +136,7 @@ if ($opt_b){
 if ($opt_M){
 	$returnmessage=$opt_M;
 }else{
-	$returnmessage=" ";
+	$returnmessage="";
 }
 
 if ($opt_w){
