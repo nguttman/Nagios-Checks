@@ -33,6 +33,7 @@ my $performance;
 my $localIP;
 my $p;
 my %mail;
+my $orignating_address = "nagios\@localhost.net";
 
 # Get the options
 if ($#ARGV le 0) {
@@ -146,7 +147,7 @@ if ($count == $opt_P){
 		$fullemailmessage = "$fullemailmessage\n $returnmessage\n\n $emailtext";
 
                 %mail = ( To => '$opt_m',
-                From    => 'opsview-slave@xconnect.net',
+                From    => '$orignating_address',
                 Subject => "MTR from $localIP to $name with IP: $opt_H at $timestamp",
                 Message => "$fullemailmessage"
                 );
