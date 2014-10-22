@@ -24,7 +24,7 @@ my $checkresult;
 
 # Get the options
 if ($#ARGV le 0) {
-
+	$opt_h=1;
 } else {
 	getopts('hc:M:w:');
 }
