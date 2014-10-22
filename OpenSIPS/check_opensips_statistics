@@ -90,7 +90,7 @@ foreach $stat (@output){
 	if ($stat =~/_size/){
 		$longoutput = ("$longoutput$stat"."B;; ");
 	}elsif (((($stat =~/_transactions/) || ($stat =~/_requests/)) ||($stat =~/_replies/)) || ($stat =~/received_ACKs/)){
-                $longoutput = ("$longoutput$stat"."C;; ");
+                $longoutput = ("$longoutput$stat"."c;; ");
 	}else{
 		$longoutput = ("$longoutput$stat;; ");
 	}
