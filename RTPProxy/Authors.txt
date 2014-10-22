@@ -1,0 +1,3 @@
+All scripts in this directory were written by Noah Guttman.
+
+I take all the blame for thier questionable design :-)
