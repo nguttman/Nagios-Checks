@@ -1,0 +1,469 @@
+#!/usr/bin/perl
+#
+# Original underlying code by Nicholas J Humfrey. - https://github.com/njh/perl-net-rtp
+# This script written by Mike Grynberg and Noah Guttman. Copyright (C) 2014 Noah Guttman. 
+#This script is released and distributed under the terms of the GNU General Public License.
+#
+#This program is meant to simulate the media (RTP) on a 2-way call
+#
+#There are 4 central procedures
+# the main_procedure which spawns all the other threads
+# recv_media_from_terminator - the thread (on the A_Side) that deals with receiving packets from the terminator
+# recv_media_from_originator - the thread (on the B_Side) that deals with receiving packets from the originator
+# send_media_to_originator - the thread that sends media from the B_Side to the originator
+# send_media_to_terminator - the thread that sends media from the A_Side to the terminator
+#
+use lib "/opt/opsview/perl/lib/";
+use lib "/usr/local/nagios/libexec/";
+use lib "/usr/lib/perl5/5.8.8/";
+
+use strict;
+use warnings;
+use IO::Socket::INET;
+use threads;
+use threads::shared;
+use Time::HiRes qw/ usleep gettimeofday /;
+use Net::RTP;
+use Getopt::Long qw(:config no_ignore_case);
+use Audio::Wav;
+use Statistics::Descriptive;
+
+
+####################################
+#UDP/RTP Constants
+####################################
+use constant {
+	PAYLOAD_SIZE => 160,         # 160 samples per packet
+	PAYLOAD_TYPE => 0,          # u-law
+	MAXLEN => 1024,
+	IP_HEADER_SIZE => 28,        # 20 bytes of IPv4 header and 8 bytes of UDP header
+};
+
+my $lost_packets :shared=0;
+my $late_packets :shared=0;
+my $ICMP_packets :shared=0;
+my $odd_packets :shared=0;
+my $duplicate_packets :shared=0;
+
+my $packets_sent :shared=0;
+my $packets_not_sent :shared=0;
+my $packets_recived :shared=0;
+
+my $originator_ssrc :shared=0;
+my $terminator_ssrc :shared=0;
+
+my $time_to_finish_up :shared =0;
+
+my $soundfile1  :shared = "/usr/local/nagios/libexec/test1.wav";
+
+my @Media_Relay_Address;
+my $Originator_Host;
+my $Terminator_Host;
+my $Originator_Port;
+my $Terminator_Port;
+my $packets_to_send=500;
+
+my $average_packet_travel_time;
+my $standard_deviation_travel_time;
+
+my @packet_trip_time :shared;
+my @packet_jitter :shared;
+
+my $average_jitter;
+my $standard_deviation_jitter;
+
+my $jitter_stats =Statistics::Descriptive::Full->new();
+my $packet_trip_stats =Statistics::Descriptive::Full->new();
+
+&usage() if @ARGV == 0; 
+
+GetOptions (
+	"H|Host=s"		=> \@Media_Relay_Address,  #address of the media relay we will send to
+	"o|originator=i"	=> \$Originator_Port,  #the originator port on the media relay
+	"T|terminator=i"	=> \$Terminator_Port,  #the terminator port on the media relay
+	"M|media=s" 		=> \$soundfile1,
+	"P|packets=i"		 => \$packets_to_send,
+	"h|help"		=> sub { usage() },
+);
+
+
+
+
+
+sub usage {
+	print "::Media Relay Check Instructions::\n\n";
+	print " -h|help,        Display this help information\n";
+	print " -H|Host,	Hostname(s) or IP of the Media Relay\n";
+	print "                  If two hosts are specified the first one is considered the originator.\n";
+	print " -o|originator,	The port to send the A-side media\n";
+        print " -t|terminator,  The port to send the B-side media\n";
+        print " -P|packets,	Number of Midea packts in each leg (Default 500)\n";
+	print " -M|media,	The soundfile (.wav) to code and send to the A-side port\n";
+	print "			 Defaults to: /usr/local/nagios/libexec/test1.wav\n";
+	print "\n";
+	print "Example:\n";
+	print "./check_media_relay -H x.x.x.x -o port1 -T port2 --mediaOrig /path/to/my1.wav --mediaTerm /path/to/my2.wav\n";
+	print "\n";
+	print "the output contains 10 values on a single line seperated by a space\n";
+	print "%_packets_lost %_Packets_late %_strange_packets %_ICMP_packets %_Duplicate_Packets\n";
+        print "AVG_packet_travel_time standard_deviation_travel_time packets_not_sent AVG_Jitter\n";
+	print "\n";
+	print "Many thanks to Nicholas J Humfrey for creating https://github.com/njh/perl-net-rtp \n";
+        print "Much of this code is based on his example scripts\n";
+        print "Script written by Noah Guttman and Copyright (C) 2014 Noah Guttman.\n";
+	print "Thanks to Mike Grynberg for his design input.\n";
+        print "This script is released and distributed under the terms of the GNU\n";
+        print "General Public License.     >>>>    http://www.gnu.org/licenses/\n";
+        print "";
+        print "This program is free software: you can redistribute it and/or modify\n";
+        print "it under the terms of the GNU General Public License as published by\n";
+        print "the Free Software Foundation.\n\n";
+        print "This program is distributed in the hope that it will be useful,\n";
+        print "but WITHOUT ANY WARRANTY; without even the implied warranty of\n";
+        print "MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n";
+        print "GNU General Public License for more details.\n";
+        print ">>>>    http://www.gnu.org/licenses/\n";
+	exit(0);
+}
+if ((scalar(@Media_Relay_Address))==2){
+	$Originator_Host = $Media_Relay_Address[0];
+	$Terminator_Host = $Media_Relay_Address[1];
+}elsif ((scalar(@Media_Relay_Address))==1){
+	$Originator_Host = $Media_Relay_Address[0];
+        $Terminator_Host = $Media_Relay_Address[0];
+}else{
+	print "Your script must specify One or Two media IPs\n";
+	&usage();
+}
+
+
+#  We call IO::Socket::INET->new() to create the originator UDP Socket 
+# and bind with the PeerAddr i.e. the Media Relay Address.
+my $socket_originator = new IO::Socket::INET (
+PeerAddr        => $Originator_Host,
+PeerPort        => $Originator_Port,
+Proto           => 'udp'
+) or die "ERROR in Socket Creation : $!\n";
+
+
+#  We call IO::Socket::INET->new() to create the terminator UDP Socket 
+# and bind with the PeerAddr.
+my $socket_terminator = new IO::Socket::INET (
+PeerAddr        => $Terminator_Host,
+PeerPort        => $Terminator_Port,
+Proto           => 'udp'
+) or die "ERROR in Socket Creation : $!\n";
+
+##################################################################################
+#here we call main that will handle the running of the program and the threads
+##################################################################################
+&main_procedure;
+
+
+
+sub main_procedure{
+	use constant {
+        	SLEEP_TIME => 100000,        
+        	MAX_RUNTIME => 20000000,          # u-law
+	};
+        my $Percent_Lost_Packets;
+        my $Percent_Late_Packets;
+        my $Percent_Strange_Packets;
+        my $Percent_ICMP_Packets;
+        my $Percent_Duplicated_Packets;
+	my $timer=0;
+	my $packet_count=0;
+        my $no_new_packets = 0;
+	#We start the listerer threads
+	my $recvthread_from_terminator = threads->new( \&recv_media_from_terminator );
+	my $recvthread_from_originator = threads->new( \&recv_media_from_originator );
+	
+	#we put a sleep here to ensure the receiving threads are up and running before we send
+	#them any traffic. this prevents the stats from indicating a problen where none exists
+	usleep(SLEEP_TIME);
+
+	#Now we start the sending threads
+	my $sendthread_to_originator = threads->new( \&send_media_to_originator );
+	my $sendthread_to_terminator = threads->new( \&send_media_to_terminator );
+	sleep(1);
+	#We sleep again before we start checking for packets recived,to give the media relay a chance to start doing it's job.
+
+	while (($no_new_packets == 0) && ($timer < MAX_RUNTIME)){
+		usleep(SLEEP_TIME);
+		if ($packets_recived > $packet_count){
+			$packet_count = $packets_recived;
+			$no_new_packets = 0;
+		}else{
+			$no_new_packets = 1;
+		}
+		$timer = $timer + SLEEP_TIME;
+	}
+
+	#Let the threads know that thier work is done
+	$time_to_finish_up =1;
+
+	#clean up the threads
+	$recvthread_from_terminator->detach();
+	$recvthread_from_originator->detach();
+	if ($sendthread_to_originator->is_joinable()){
+		$sendthread_to_originator->join();
+	}else{
+		$sendthread_to_originator->detach();
+	}
+	if ($sendthread_to_terminator->is_joinable()){
+		$sendthread_to_terminator->join();
+	}else{
+		$sendthread_to_terminator->detach();
+	}
+
+	#Calculate data to return to the wrapper and exit
+	if ($packets_sent > 0){
+		$Percent_Lost_Packets = (($lost_packets) / ($packets_sent) * 100);
+#	       	$Percent_Lost_Packets = (($packets_sent - $packets_recived) / ($packets_sent) * 100);
+	}else{
+		$Percent_Lost_Packets = 100;
+	}
+	if ($packets_recived > 0){
+        	$Percent_Late_Packets = (($late_packets) / ($packets_recived) * 100);
+		$Percent_Strange_Packets = (($odd_packets) / ($odd_packets + $packets_recived) * 100);
+		$Percent_ICMP_Packets = (($ICMP_packets) / ($ICMP_packets + $packets_recived) * 100);
+		$Percent_Duplicated_Packets = (($duplicate_packets) / ($packets_recived) * 100);
+		$packet_trip_stats->add_data(@packet_trip_time);
+		$average_packet_travel_time = $packet_trip_stats->mean();
+		$standard_deviation_travel_time = $packet_trip_stats->standard_deviation();
+
+		$jitter_stats->add_data(@packet_jitter);
+		$average_jitter = $jitter_stats->mean();
+                $standard_deviation_jitter = $jitter_stats->standard_deviation();
+	}else{
+                $Percent_Late_Packets = 0;
+                $Percent_Strange_Packets = 0;
+                $Percent_ICMP_Packets = 0;
+                $Percent_Duplicated_Packets = 0;
+		$average_packet_travel_time = 0;
+	}
+	printf("%.4f %.4f %.4f %.4f %.4f ",$Percent_Lost_Packets,$Percent_Late_Packets,$Percent_Strange_Packets,$Percent_ICMP_Packets,$Percent_Duplicated_Packets);
+	print("$average_packet_travel_time $standard_deviation_travel_time ");
+	print("$packets_not_sent ");
+	print("$average_jitter $standard_deviation_jitter");
+	
+	exit 0;
+}
+
+
+
+
+
+
+#####################################################
+#send packets to originator
+#####################################################
+sub send_media_to_originator { 
+
+	my $wav = new Audio::Wav;
+	my $read = $wav -> read( "$soundfile1" );
+	my $data;
+	my $packets =0;
+	my $packet_sent;
+	my $packet_transmition_time;
+
+	# Create RTP packet
+	my $send_packet = new Net::RTP::Packet();
+	$send_packet->payload_type( PAYLOAD_TYPE );
+	$send_packet->version(2);
+	$send_packet->seq_num(1);
+	$originator_ssrc = $send_packet->ssrc();
+	my $rtp_chunk;
+	while((($data = $read -> read_raw( PAYLOAD_SIZE ) ) && ($time_to_finish_up ==0)) && ($packets <= $packets_to_send)){
+	        # Set payload, and increment sequence number and timestamp
+		$send_packet->payload($data);
+		$send_packet->seq_num_increment();
+		$packet_transmition_time = gettimeofday();
+		$packet_transmition_time = (substr($packet_transmition_time, -11) * 100000);
+		$packet_transmition_time = (substr($packet_transmition_time, -10));
+		$send_packet->timestamp($packet_transmition_time);
+		$rtp_chunk = $send_packet->encode($data);
+		$packet_sent =1;
+		$socket_originator->send($rtp_chunk) or $packet_sent =0;
+		if ($packet_sent==1){
+			$packets_sent++;
+		}else{
+			$packets_not_sent++;	
+		}
+		$packets++;
+		#usleep(20000);
+		usleep( 1000000 * PAYLOAD_SIZE / 8000 ); #this is to more realistically simulate RTP traffic
+	}
+}
+
+
+
+#####################################################
+#send packets to terminator
+#####################################################
+sub send_media_to_terminator { 
+	my $wav = new Audio::Wav;
+	my $read = $wav -> read( "$soundfile1" );
+	my $data;
+	my $packets =0;
+	my $packet_sent;
+	my $packet_transmition_time;
+
+	# Create RTP packet
+	my $send_packet = new Net::RTP::Packet();
+	$send_packet->payload_type( PAYLOAD_TYPE );
+	$send_packet->version(2);
+	$send_packet->seq_num(1);
+	$terminator_ssrc = $send_packet->ssrc();
+	my $rtp_chunk;
+        while ((($data = $read -> read_raw( PAYLOAD_SIZE ) ) && ($time_to_finish_up ==0)) && ($packets <= $packets_to_send)){
+	        # Set payload, and increment sequence number and timestamp
+		$send_packet->payload($data);
+		$send_packet->seq_num_increment();
+                $packet_transmition_time = gettimeofday() ;
+		$packet_transmition_time = (substr($packet_transmition_time, -11) * 100000);
+		$packet_transmition_time = (substr($packet_transmition_time, -10));
+                $send_packet->timestamp($packet_transmition_time);
+		#$send_packet->timestamp_increment( PAYLOAD_SIZE );
+		$rtp_chunk = $send_packet->encode($data);
+		$packet_sent =1;
+		$socket_terminator->send($rtp_chunk) or $packet_sent =0;
+                if ($packet_sent==1){
+                        $packets_sent++;
+                }else{ 
+                        $packets_not_sent++;
+                }
+		$packets++;
+		#usleep(20000);
+		usleep( 1000000 * PAYLOAD_SIZE / 8000 ); #this is to more realistically simulate RTP traffic
+	}
+}
+
+#####################################################
+#listen for incoming packets from terminator
+#####################################################
+sub recv_media_from_terminator { 
+	my $received_packet_from_terminator;	
+	my $expected_seq_num =2;
+	my $actual_seq_num;
+	my $is_ICMP=0;
+	my $packet_send_time;
+	my $packet_arrival_time;
+        my $previous_packet_send_time=0;
+        my $previous_packet_arrival_time=0;
+	my $packet_travel_time;
+	my $current_jitter=0;
+
+	while($time_to_finish_up ==0) {
+		$is_ICMP=0;
+		$socket_originator->recv($received_packet_from_terminator,MAXLEN) or $is_ICMP=1;
+		if ($is_ICMP==0){
+			my $packet = new Net::RTP::Packet();
+
+			$packet->decode($received_packet_from_terminator); 
+			if ($terminator_ssrc == $packet->ssrc()){
+				$packet_arrival_time = gettimeofday();
+                        	$packet_arrival_time = (substr($packet_arrival_time, -11) *100000);
+				$packet_arrival_time = (substr($packet_arrival_time, -10));
+                        	$packet_send_time = $packet->timestamp();
+				$packet_travel_time = (($packet_arrival_time - $packet_send_time) /100);
+				push(@packet_trip_time, $packet_travel_time);
+				$current_jitter = ($current_jitter + (abs(($packet_arrival_time - $previous_packet_arrival_time) - ($packet_send_time - $previous_packet_send_time)) - $current_jitter)/16);
+				push(@packet_jitter, $current_jitter);
+				$previous_packet_send_time = $packet_send_time;
+				$previous_packet_arrival_time = $packet_arrival_time;
+				$packets_recived++;
+				$actual_seq_num = $packet->seq_num();
+	
+				# Lost or OutOfOrder packet?
+				if ($expected_seq_num != $actual_seq_num) {
+					if (($expected_seq_num - 1) == $actual_seq_num) {
+						# Duplicated
+						$duplicate_packets++
+					} elsif ($expected_seq_num > $actual_seq_num) {
+						# Out Of Order
+						$late_packets++;
+						$lost_packets--;
+					} else {
+						# Lost
+						$lost_packets += ($actual_seq_num - $expected_seq_num);
+					}
+				}
+	
+				# Calculate next number in sequence
+				$expected_seq_num = $actual_seq_num+1;
+			}else{
+                                $odd_packets++;
+                        }
+                }elsif ($is_ICMP==1){
+                        $ICMP_packets++;
+                }
+	}
+}
+
+
+
+
+
+
+#####################################################
+#listen for incoming packets from originator
+#####################################################
+sub recv_media_from_originator {
+        my $received_packet_from_originator;
+        my $expected_seq_num =2;
+        my $actual_seq_num;
+        my $is_ICMP=0;
+        my $packet_send_time;
+        my $packet_arrival_time;
+        my $previous_packet_send_time=0;
+        my $previous_packet_arrival_time=0;
+	my $packet_travel_time;
+	my $current_jitter=0;
+
+	while($time_to_finish_up ==0){
+		$is_ICMP=0;
+		$socket_terminator->recv($received_packet_from_originator,MAXLEN) or $is_ICMP=1;
+		if ($is_ICMP==0){
+			my $packet = new Net::RTP::Packet();
+			$packet->decode($received_packet_from_originator); 
+	                if ($originator_ssrc == $packet->ssrc()){
+                                $packet_arrival_time = gettimeofday();
+                                $packet_arrival_time = (substr($packet_arrival_time, -11) *100000);
+				$packet_arrival_time = (substr($packet_arrival_time, -10));
+                                $packet_send_time = $packet->timestamp();
+                                $packet_travel_time = (($packet_arrival_time - $packet_send_time) /100);
+                                push(@packet_trip_time, $packet_travel_time);
+				$current_jitter = ($current_jitter + (abs(($packet_arrival_time - $previous_packet_arrival_time) - ($packet_send_time - $previous_packet_send_time)) - $current_jitter)/16);
+				push(@packet_jitter, $current_jitter);
+                                $previous_packet_send_time = $packet_send_time;
+                                $previous_packet_arrival_time = $packet_arrival_time;
+				
+				$packets_recived++;
+				$actual_seq_num = $packet->seq_num();
+	
+				# Lost or OutOfOrder packet?
+				if ($expected_seq_num != $actual_seq_num) {
+					if ($expected_seq_num-1 == $actual_seq_num) {
+						# Duplicated
+						$duplicate_packets++;
+					} elsif ($expected_seq_num > $actual_seq_num) {
+						# Out Of Order
+						$late_packets++;
+						$lost_packets--;
+					} else {
+						# Lost
+						$lost_packets += ($actual_seq_num - $expected_seq_num);
+					}
+				}
+				# Calculate next number in sequence
+				$expected_seq_num = $actual_seq_num+1;
+
+                      }else{
+                                $odd_packets++;
+                      }
+                }elsif ($is_ICMP==1){
+                        $ICMP_packets++;
+                }
+	}
+}

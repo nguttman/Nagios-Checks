@@ -1,3 +1,7 @@
 All scripts in this directory were written by Noah Guttman.
 
-I take all the blame for thier questionable design :-)
+check_media_relay -	contains code elements borrowed from the work of Nicholas J Humfrey. - https://github.com/njh/perl-net-rtp 
+			This script was written with some minor assistance of Mike Grynberg
+
+
+I take all the blame for the questionable design you finde here :-)

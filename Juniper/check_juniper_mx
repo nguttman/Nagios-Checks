@@ -1,0 +1,207 @@
+#!/usr/bin/perl
+
+## Script written by Noah Guttman and Copyright (C) 2014 Noah Guttman. This script is released and distributed under the terms of the GNU General Public License
+
+#Libraries to use
+use warnings;
+use strict;
+use lib "/usr/local/nagios/perl/lib";
+use lib "/usr/local/nagios/libexec/";
+use Getopt::Std;
+
+# Check for proper args....
+
+use vars qw($opt_h $opt_H $opt_C $opt_M $opt_U $opt_w $opt_c);
+my $currentStatus;
+my $justStatus;
+my $exitcode=3;
+my @statusList;
+my $val;
+my $criticals=0;
+my $warnings=0;
+my $performance_data="";
+my @data_line;
+my $data_field;
+my $data_value;
+my $return_status="";
+my @value;
+my @warn_levels;
+my @crit_levels;
+if ($#ARGV le 0) {
+	$opt_h=1;
+} else {
+        getopts('hH:C:M:U:w:c:');
+}
+
+
+## Display Help
+if ($opt_h){
+        print "::Juniper MX Check Instructions::\n\n";
+        print " -h,             Display this help information\n";
+        print " -H,             Hostname or IP to check\n";
+        print " -U,             Username to use\n";
+        print " -M,             Specify a message to return on failure\n";
+        print " -C,             Check Type (alarms, environment, stats)\n";
+	print "** The following are optional and only used for the stats check type**\n";
+	print "         Levels must be specified as CPU:Interrupt:Heap:Buffer\n";
+        print "         Example -w 70:20:50:30 -c 90:40:70:50\n";
+	print " -w,             Warning Levels\n";
+	print " -c,             Critical Levels\n";
+        print " \n";
+        print "In order for this script to work you must first set up a trusted key\n";
+        print "http://www.juniper.net/techpubs/en_US/junos13.2/topics/task/configuration/security-ssh-hostkeys-secure-copying.html\n
+";
+        print "\n";
+        print "Script written by Noah Guttman and Copyright (C) 2014 Noah Guttman.\n";
+        print "This script is released and distributed under the terms of the GNU\n";
+        print "General Public License.     >>>>    http://www.gnu.org/licenses/\n";
+        print "";
+        print "This program is free software: you can redistribute it and/or modify\n";
+        print "it under the terms of the GNU General Public License as published by\n";
+        print "the Free Software Foundation.\n\n";
+        print "This program is distributed in the hope that it will be useful,\n";
+        print "but WITHOUT ANY WARRANTY; without even the implied warranty of\n";
+        print "MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n";
+        print "GNU General Public License for more details.\n";
+        print ">>>>    http://www.gnu.org/licenses/\n";
+        exit 0;
+}
+
+if (!$opt_H){
+	print "You must specify a Hostname or IP to check (-H)\n";
+	exit 3;
+}
+
+if (!$opt_U){
+        print "You must specify a Username to use (-U)\n";
+        exit 3;
+}
+
+if ($opt_C =~ /alarms/){
+	$currentStatus = `ssh $opt_U\@$opt_H "show chassis alarms"`;
+	@statusList = split("\n",$currentStatus);
+	foreach my $line (@statusList){
+		if ($line =~ /Major/i){
+			$criticals++;
+			$return_status .= "$line\n";
+		}elsif ($line =~ /Minor/i){
+			$warnings++;
+			$return_status .= "$line\n";
+		}
+	}
+	if ($criticals > 0){
+	        if ($opt_M){
+         	       $return_status = "$opt_M  - $return_status";
+        	}
+                print "CRITICAL: $return_status";
+                exit 2;
+	}elsif ($warnings >0){
+		print "WARNING: $return_status";
+                exit 1;
+	}else{
+		print"OK: All checks returned OK\n";
+		exit 0;
+	}
+
+}elsif($opt_C =~ /environment/){
+        $currentStatus = `ssh $opt_U\@$opt_H "show chassis environment" |  awk \'{ FS = "  +" }{print \$2":"\$4":"\$3}\'`;
+	@statusList = split("\n",$currentStatus);
+	foreach my $line (@statusList){
+		unless((($line =~ /OK/i) || ($line =~ /Status/i)) || (($line =~ /node/i) || ($line =~ /--------/i))){
+			$criticals++;
+			$return_status .= " - $line";
+		}
+		($data_field, $data_value) = split(":",$line);
+		if ($data_value =~ /\d+ degrees C/){
+			$data_field =~ s/\s/_/g;
+			if ($data_value =~ /^\d+ /){
+				@value = split(" ",$data_value);
+				$performance_data .="$data_field=$value[0];; ";
+			}
+		}
+	}
+	if ($criticals > 1){
+	        if ($opt_M){
+                       $return_status = "$opt_M  - $return_status";
+                }
+		print"Critical$return_status|$performance_data\n";
+		exit 2;
+	}else{
+		print"OK - All checks returned OK|$performance_data\n";
+		exit 0;
+	}		
+}elsif($opt_C =~ /stats/){
+	if (($opt_w) && ($opt_c)){
+		if (($opt_w =~ /\d+:\d+:\d+:\d+/) && ($opt_c =~ /\d+:\d+:\d+:\d+/)){
+			@warn_levels = split(":",$opt_w);
+			@crit_levels = split(":",$opt_c);
+		}
+	}
+        $currentStatus = `ssh $opt_U\@$opt_H "show chassis tfeb" |awk \'{print \$1"_"\$2"="\$3}\'`;
+        @statusList = split("\n",$currentStatus);
+        foreach my $line (@statusList){
+                if ($line =~ /utilization/i){
+			$performance_data .= "$line"."%;; ";
+			if ((scalar(@warn_levels) == 4) && (scalar(@crit_levels) == 4)) {
+				@value = split("=",$line);
+				if ($line =~ /CPU/i){
+					if ($value[1] >= $crit_levels[0]){
+						$criticals++;
+						$return_status .= " - $line";
+					}elsif ($value[1] >= $warn_levels[0]){
+						$warnings++;
+						$return_status .= " - $line";
+					}
+				}elsif ($line =~/Interrupt/i){
+                                        if ($value[1] >= $crit_levels[1]){
+                                                $criticals++;
+						$return_status .= " - $line";
+                                        }elsif ($value[1] >= $warn_levels[1]){
+                                                $warnings++;
+						$return_status .= " - $line";
+                                        }
+                                }elsif ($line =~/Heap/i){
+                                        if ($value[1] >= $crit_levels[2]){
+                                                $criticals++;
+						$return_status .= " - $line";
+                                        }elsif ($value[1] >= $warn_levels[2]){
+                                                $warnings++;
+						$return_status .= " - $line";
+                                        }
+                                }elsif ($line =~/Buffer/i){
+                                        if ($value[1] >= $crit_levels[3]){
+                                                $criticals++;
+						$return_status .= " - $line";
+                                        }elsif ($value[1] >= $warn_levels[3]){
+                                                $warnings++;
+						$return_status .= " - $line";
+                                        }
+                                }
+			}
+                }elsif ($line =~ /temperature/i){
+                        $performance_data .= "$line;; ";
+                }
+        }
+        if ($criticals > 0){
+                if ($opt_M){
+                       $return_status = "$opt_M - $return_status";
+                }
+                print "CRITICAL$return_status|$performance_data\n";
+                exit 2;
+        }elsif ($warnings >0){
+                print "WARNING$return_status|$performance_data\n";
+                exit 1;
+        }else{
+                print"OK - All checks returned OK|$performance_data\n";
+                exit 0;
+        }
+        
+}else{
+        print "You must specify a check type (alarms, environment, stats) (-C)\n";
+        exit 3;
+}
+
+
+#Code should not be ablt to get this far
+print "The code has reached a point that should not be possible. This should be investigated.\n";
+exit 3;

@@ -1,0 +1,326 @@
+#!/usr/bin/perl
+
+
+## Script written by Noah Guttman and Copyright (C) 2014 Noah Guttman. This script is released and distributed under the terms of the GNU General Public License
+
+#Libraries to use
+use warnings;
+use strict;
+use Getopt::Std;
+use Time::HiRes qw(gettimeofday usleep time ualarm);
+use IO::Socket;
+use threads;
+use threads::shared;
+use String::Random;
+
+use vars qw( $opt_d $opt_h $opt_n $opt_H $opt_P $opt_t $opt_r $opt_M $opt_R $opt_w $opt_c $opt_o $opt_T $opt_m);
+$opt_w = 100;
+$opt_n=500;
+$opt_m="/usr/local/nagios/libexec/test1.wav";
+my $port1;
+my $port2;
+my $host1;
+my $host2;
+my $display='';
+my $randomstring = new String::Random;
+
+my $callid = "monitor\@opsview_".$randomstring->randpattern("cCncnCCcnCncnCcncC");
+my $tranaction_id;
+my $to_tag= $randomstring->randpattern("cCncnCCcnCncnCcncC");
+my $from_tag = $randomstring->randpattern("cCncnCCcnCncnCcncC");
+my $teardown_code = $randomstring->randpattern("nnnnnnnnnnnnn");
+my $baseport;
+
+my @output;
+my @line;
+
+my $remaining_calls='';
+my $gah :shared="";
+my $testerrortotal=0;
+my $response_timeout=0;
+
+my $elapsed=1000;
+my $debug_output="";
+my $exitcode=3;
+my $icmp_responsed :shared=0;
+my $timeout=1000000;
+my $retries=4;
+my $errors=0;
+my $mediatest;
+my $timer =0;
+
+my $starttime;
+
+my $sessions_created;
+my $active_sessions;
+my $active_streams;
+
+my $Percent_packets_lost;
+my $Percent_Packets_late;
+my $Percent_Strange_Packets;
+my $Percent_ICMP_Packets;
+my $Percent_Duplicated_Packets;
+my $Packets_Not_Sent;
+my $Average_Packet_Travel_Time;
+my $Standard_Deviation_Travel_Time;
+my $Average_Jitter;
+my $Standard_Deviation_Jitter;
+
+my $sock='';
+my $recvthread;
+##init();
+
+# Get the options
+if ($#ARGV le 0) {
+	$opt_h=1;
+} else {
+	getopts('hH:P:t:r:R:w:c:o:T:n:iM:m:');
+}
+
+
+## Display Help
+if ($opt_h){
+        print "::SPR Check Instructions::\n\n";
+        print " -h,             Display this help information\n";
+        print " -H,             Hostname or IP to check\n";
+        print " -M,             Specify a message to return on failure\n";
+        print " -P,             Port to check\n";
+        print " -R,             Restart command to use\n";
+        print " -t,             Timeout (ms) for each communication attempt.\n";
+        print "                  The default is 1000\n";
+        print " -r,             Number of times to retry communications.\n";
+        print "                  The default is 4\n";
+        print " -w,             Warning level % RTP packet loss.\n";
+        print " -c,             Critical level % RTP packet loss.\n";
+        print "                  Either use both -w && -c or neither\n";
+        print " -m,             Media file used to genereate the RTP.\n";
+        print "                  Default is /usr/local/nagios/libexec/test1.wav\n";
+	print " -n,             Number of media packets to send on each leg (Default 500).\n";
+        print "Script written by Noah Guttman and Copyright (C) 2014 Noah Guttman.\n";
+        print "This script is released and distributed under the terms of the GNU\n";
+        print "General Public License.     >>>>    http://www.gnu.org/licenses/\n";
+        print "";
+        print "This program is free software: you can redistribute it and/or modify\n";
+        print "it under the terms of the GNU General Public License as published by\n";
+        print "the Free Software Foundation.\n\n";
+        print "This program is distributed in the hope that it will be useful,\n";
+        print "but WITHOUT ANY WARRANTY; without even the implied warranty of\n";
+        print "MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n";
+        print "GNU General Public License for more details.\n";
+        print ">>>>    http://www.gnu.org/licenses/\n";
+        exit 0; 
+}
+
+
+
+
+##Set custom output if any set
+
+if ($opt_P){
+        $baseport=$opt_P;
+}else{
+        $baseport=6062;
+}
+if ($opt_t){
+        $timeout=$opt_t*1000;
+}
+if ($opt_r){
+        $retries=$opt_r;
+}
+
+#First we check status of the rtpprxoy
+while ($testerrortotal<$retries){
+        $sock = IO::Socket::INET->new(
+        Proto    => 'udp',
+        PeerPort => $baseport,
+        PeerAddr => $opt_H,
+        ) or die "Could not create socket: $!\n";
+
+        $recvthread = threads->new( \&recive_rtpproxy_request);
+        usleep(10000);
+	$tranaction_id = $randomstring->randpattern("nnnnnn")."_".$randomstring->randpattern("nnnnnnn");
+        my $starttime = gettimeofday;
+        $sock->send("$tranaction_id Ib") or die "Send error: $!\n";
+
+        #reset timer
+        $timer =0;
+        while (($timer <= $timeout ) && ($gah !~ /.*[\n,\r].*[\n,\r].*[\n.\r]/i)){
+                usleep(2000);
+                $timer = $timer + 2000;
+        }
+        $elapsed = (gettimeofday - $starttime)*1000;
+        #reject bad time data
+        if ($elapsed < 0){
+                $elapsed='';
+        }
+
+	if ($opt_d){
+                $debug_output = $debug_output."\n------------------------------\nDEBUG:$gah\n------------------------------\n";
+        }
+
+
+        if ((($gah =~ /$tranaction_id sessions created/i) && ($gah =~ /active sessions/i)) && ($gah =~ /active streams/i)){
+                $recvthread->join();
+                @output = split ("\n",$gah);
+                foreach my $val (@output) {
+                        if ($val =~ /sessions created/i) {
+                                @line = split (":", $val);
+                                $sessions_created = substr($line[1],1)."c";
+                        }elsif ($val =~ /active sessions/i){
+                                @line = split (":", $val);
+                                $active_sessions = substr($line[1],1);
+                        }elsif ($val =~ /active streams/i){
+                                @line = split (":", $val);
+                                $active_streams = substr($line[1],1);
+                        }elsif ($val =~ /remaining calls/i){
+                                @line = split (":", $val);
+                                $remaining_calls = substr($line[1],1);
+                        }
+                }
+		last;
+        }elsif ($icmp_responsed >$testerrortotal){
+                $recvthread->join();
+        }elsif ($gah =~ /./){
+                $errors++;
+                $recvthread->join();
+        }else{
+                $recvthread->detach;
+                $response_timeout++;
+        }
+        $testerrortotal++;
+        $sock->close;
+}
+#now get media ports and test the media
+#If our version of rtpproxy does not support this feature we fake it.
+unless ($remaining_calls){
+	$remaining_calls =100;
+}
+if (($remaining_calls > 10) && ($testerrortotal < $retries)) {
+	while ($testerrortotal<$retries){
+        	$sock = IO::Socket::INET->new(
+	        Proto    => 'udp',
+	        PeerPort => $baseport,
+	        PeerAddr => $opt_H,
+	        ) or die "Could not create socket: $!\n";
+		
+		$tranaction_id = $randomstring->randpattern("nnnnnn")."_".$randomstring->randpattern("nnnnnn");
+        	$recvthread = threads->new( \&recive_rtpproxy_request);
+		$sock->send("$tranaction_id U $callid 0.0.0.0 20000 $to_tag;1 ;1 0.0.0.0:9999 $teardown_code") or die "Send error: $!\n";
+		$timer =0;
+        	while (($timer <= $timeout ) && ($gah !~ /$tranaction_id \d+ $opt_H/i)){
+                	usleep(2000);
+                	$timer = $timer + 2000;
+        	}
+		if ($gah =~ /$tranaction_id \d+ $opt_H/){
+			@output = split (" ",$gah);
+			$recvthread->join();
+			$port1=$output[1];
+			$host1=$output[2];  
+		}else{
+			$testerrortotal++;
+			$recvthread->detach;
+		}
+		# If we got the first port we query for the second
+		if ($port1){
+			$tranaction_id = $randomstring->randpattern("nnnnnn")."_".$randomstring->randpattern("nnnnnn");
+			$recvthread = threads->new( \&recive_rtpproxy_request);
+			$sock->send("$tranaction_id L $callid 0.0.0.0 20000 $to_tag;1 $from_tag;1") or die "Send error: $!\n";
+			$timer =0;
+			while (($timer <= $timeout ) && ($gah !~ /$tranaction_id \d+ $opt_H/i)){
+				usleep(2000);
+				$timer = $timer + 2000;
+			}
+			if ($gah =~ /$tranaction_id \d+ $opt_H/i){
+				$recvthread->join();
+				@output = split (" ",$gah);	
+				$port2=$output[1];
+				$host2=$output[2]; 
+				last;
+			}else{
+				$testerrortotal++;
+				$recvthread->detach;
+			}
+		}
+
+	}
+}
+
+if (($port1) &&($port2)){
+	$mediatest = `usr/local/nagios/libexec/ -H $host1 -H $host2 -o $port1 -T $port2 --media $opt_m -P $opt_n`;
+	($Percent_packets_lost , $Percent_Packets_late, $Percent_Strange_Packets, $Percent_ICMP_Packets, $Percent_Duplicated_Packets, $Average_Packet_Travel_Time, $Standard_Deviation_Travel_Time, $Packets_Not_Sent, $Average_Jitter, $Standard_Deviation_Jitter) = split(" ",$mediatest);
+#
+#Then tell the rtpproxy to end the call
+	$tranaction_id = $randomstring->randpattern("nnnnnn")."_".$randomstring->randpattern("nnnnnn");
+	$sock->send("$tranaction_id D $callid $to_tag") or die "Send error: $!\n";
+	$sock->recv($gah,128) or $testerrortotal++;
+	$sock->close;
+	if (($opt_w) && ($opt_c)){
+		if ($Percent_packets_lost >= $opt_c){
+	        	$display = "CRITCAL: $Percent_packets_lost \% RTP packet loss - $display";
+	                $exitcode =2;
+		}elsif ($Percent_packets_lost >= $opt_w){
+			if ($exitcode < 1){
+				$display = "WARNING: $Percent_packets_lost \% RTP packet loss - $display";
+				$exitcode =1;
+			}else{
+				$display .= " - WARNING: $Percent_packets_lost \% RTP packet loss";
+			}
+		}else{
+			$display .= " - OK: $Percent_packets_lost \% RTP packet loss";
+			$exitcode =0;
+		}
+	}
+
+}
+if ($opt_R){
+	print ("$opt_R ");
+}
+
+if ((($testerrortotal == 0) && ($icmp_responsed==0)) && ($response_timeout ==0)){
+	if ($exitcode ==2){
+	        print ("$opt_H $opt_P $display");
+		if ($opt_M){
+			print (" $opt_M");
+		}
+	}elsif (($exitcode ==1) || ($exitcode ==0)){
+	        print ("$opt_H $opt_P $display ");
+	}else{
+		print ("$opt_H $opt_P Something has gone wrong");
+		$exitcode = 3;
+	}
+}else{
+	if ($exitcode < 2){
+		$exitcode++;
+	}
+        if ($exitcode ==2){
+                print ("$opt_H $opt_P $display");
+		if ($opt_M){
+                        print (" $opt_M");
+                }
+        }elsif ($exitcode ==1){
+                print ("$opt_H $opt_P $display");
+        }else{
+		print ("$opt_H $opt_P CRITCAL:SPR has not responded correctly after $testerrortotal attempts.");
+		$exitcode = 2;
+        }
+}
+print ("|Response_Time=$elapsed"."ms;; ICMP=$icmp_responsed;; Errors=$errors;; Timeouts=$response_timeout;;");
+if ($mediatest){
+        print" Lost_Packets=$Percent_packets_lost"."%;; Late_Packets=$Percent_Packets_late"."%;; Strange_Packets=$Percent_Strange_Packets"."%;; Media_ICMP_Packets=$Percent_ICMP_Packets"."%;; Duplicated_Packets=$Percent_Duplicated_Packets"."%;;";
+        print" Unsent_Packets=$Packets_Not_Sent;; AVG_Packet_Transit_Time=$Average_Packet_Travel_Time"."ms;; Standard_Deviation_Packet_Transit_Time=$Standard_Deviation_Travel_Time"."ms;; AVG_Jitter=$Average_Jitter;; Standard_Deviation_Jitter=$Standard_Deviation_Jitter;;\n";
+
+}
+exit ($exitcode);
+
+
+#Code should never get this far, but just in case....
+if ($opt_R){
+        print ("$opt_R ");
+}
+print ("$opt_H $opt_P Something has gone wrong\n");
+exit 3;
+
+sub recive_rtpproxy_request{
+		$sock->recv($gah,128) or $icmp_responsed++;
+		#$sock->close;
+}
