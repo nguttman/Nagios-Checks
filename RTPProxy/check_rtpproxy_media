@@ -2,6 +2,7 @@
 
 
 ## Script written by Noah Guttman and Copyright (C) 2014 Noah Guttman. This script is released and distributed under the terms of the GNU General Public License
+# The script expects to find a script installed at /usr/local/nagios/libexec/check_media_relay
 
 #Libraries to use
 use warnings;
@@ -96,6 +97,7 @@ if ($opt_h){
         print " -m,             Media file used to genereate the RTP.\n";
         print "                  Default is /usr/local/nagios/libexec/test1.wav\n";
 	print " -n,             Number of media packets to send on each leg (Default 500).\n";
+	print "The script will run /usr/local/nagios/libexec/check_media_relay\n";
         print "Script written by Noah Guttman and Copyright (C) 2014 Noah Guttman.\n";
         print "This script is released and distributed under the terms of the GNU\n";
         print "General Public License.     >>>>    http://www.gnu.org/licenses/\n";
