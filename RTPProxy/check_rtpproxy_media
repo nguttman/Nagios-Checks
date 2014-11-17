@@ -80,7 +80,7 @@ if ($#ARGV le 0) {
 
 ## Display Help
 if ($opt_h){
-        print "::SPR Check Instructions::\n\n";
+        print "::RTPProxy Check Instructions::\n\n";
         print " -h,             Display this help information\n";
         print " -H,             Hostname or IP to check\n";
         print " -M,             Specify a message to return on failure\n";
@@ -246,7 +246,7 @@ if (($remaining_calls > 10) && ($testerrortotal < $retries)) {
 }
 
 if (($port1) &&($port2)){
-	$mediatest = `usr/local/nagios/libexec/ -H $host1 -H $host2 -o $port1 -T $port2 --media $opt_m -P $opt_n`;
+	$mediatest = `/usr/local/nagios/libexec/check_media_relay -H $host1 -H $host2 -o $port1 -T $port2 --media $opt_m -P $opt_n`;
 	($Percent_packets_lost , $Percent_Packets_late, $Percent_Strange_Packets, $Percent_ICMP_Packets, $Percent_Duplicated_Packets, $Average_Packet_Travel_Time, $Standard_Deviation_Travel_Time, $Packets_Not_Sent, $Average_Jitter, $Standard_Deviation_Jitter) = split(" ",$mediatest);
 #
 #Then tell the rtpproxy to end the call
