@@ -243,9 +243,9 @@ sub main_procedure{
 		$average_packet_travel_time = 0;
 	}
 	printf("%.4f %.4f %.4f %.4f %.4f ",$Percent_Lost_Packets,$Percent_Late_Packets,$Percent_Strange_Packets,$Percent_ICMP_Packets,$Percent_Duplicated_Packets);
-	print("$average_packet_travel_time $standard_deviation_travel_time ");
-	print("$packets_not_sent ");
-	print("$average_jitter $standard_deviation_jitter");
+        printf("%.4f %.4f ", $average_packet_travel_time,$standard_deviation_travel_time);
+        print("$packets_not_sent ");
+        printf("%.4f %.4f ",$average_jitter,$standard_deviation_jitter);
 	
 	exit 0;
 }
