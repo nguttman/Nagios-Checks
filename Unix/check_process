@@ -178,7 +178,7 @@ if ($processesrunning < 1) {
 #Checking the actual stats
 if ($checktoken == 3){
 	if ($opt_P){
-		foreach $line (`/bin/ps -eo ppid,pid,pcpu,pmem,vsz,rss,cmd --no-header |grep -vw grep |grep -vw check_process_resources |grep -w $PID |awk \'{print \$3}\'`){
+		foreach $line (`/bin/ps -eo ppid,pid,pcpu,pmem,vsz,rss,cmd --no-header |grep -vw grep |grep -vw check_process_resources |grep -w " $PID " |awk \'{print \$3}\'`){
                         if ($line !~ /^$/){
 			 	$total_proc = $line + $total_proc;
 			}
@@ -198,7 +198,7 @@ if ($checktoken == 3){
 	}
 }elsif ($checktoken == 4){
 	if ($opt_P){
-		foreach $line (`/bin/ps -eo ppid,pid,pcpu,pmem,vsz,rss,cmd --no-header |grep -vw grep |grep -vw check_process_resources |grep $PID |awk \'{print \$4}\'`){
+		foreach $line (`/bin/ps -eo ppid,pid,pcpu,pmem,vsz,rss,cmd --no-header |grep -vw grep |grep -vw check_process_resources |grep " $PID " |awk \'{print \$4}\'`){
 			if ($line !~ /^$/){
                		 	$total_proc = $line + $total_proc;
       	 		}
@@ -218,7 +218,7 @@ if ($checktoken == 3){
 	}
 }elsif ($checktoken == 5){
 	if ($opt_P){
-		foreach $line (`/bin/ps -eo ppid,pid,pcpu,pmem,vsz,rss,cmd --no-header |grep -vw grep |grep -vw check_process_resources |grep $PID |awk \'{print \$5}\'`){
+		foreach $line (`/bin/ps -eo ppid,pid,pcpu,pmem,vsz,rss,cmd --no-header |grep -vw grep |grep -vw check_process_resources |grep " $PID " |awk \'{print \$5}\'`){
 			if ($line !~ /^$/){
                		 	$total_proc = $line + $total_proc;
       	 		}
@@ -238,7 +238,7 @@ if ($checktoken == 3){
 	}
 }elsif ($checktoken == 6){
 	if ($opt_P){
-		foreach $line (`/bin/ps -eo ppid,pid,pcpu,pmem,vsz,rss,cmd --no-header |grep -vw grep |grep -vw check_process_resources |grep $PID |awk \'{print \$6}\'`){
+		foreach $line (`/bin/ps -eo ppid,pid,pcpu,pmem,vsz,rss,cmd --no-header |grep -vw grep |grep -vw check_process_resources |grep " $PID " |awk \'{print \$6}\'`){
 			if ($line !~ /^$/){
                		 	$total_proc = $line + $total_proc;
       	 		}
