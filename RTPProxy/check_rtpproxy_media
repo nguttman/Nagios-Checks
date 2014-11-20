@@ -96,8 +96,8 @@ if ($opt_h){
         print "                  Either use both -w && -c or neither\n";
         print " -m,             Media file used to genereate the RTP.\n";
         print "                  Default is /usr/local/nagios/libexec/test1.wav\n";
-	print " -n,             Number of media packets to send on each leg (Default 500).\n";
-	print "The script will run /usr/local/nagios/libexec/check_media_relay\n";
+        print " -n,             Number of media packets to send on each leg (Default 500).\n";
+        print "The script will run /usr/local/nagios/libexec/check_media_relay\n";
         print "Script written by Noah Guttman and Copyright (C) 2014 Noah Guttman.\n";
         print "This script is released and distributed under the terms of the GNU\n";
         print "General Public License.     >>>>    http://www.gnu.org/licenses/\n";
@@ -192,6 +192,14 @@ while ($testerrortotal<$retries){
         $testerrortotal++;
         $sock->close;
 }
+if ($testerrortotal == 0){
+	$display .= "OK: RTP Proxy $opt_H:$baseport responded in $elapsed ms. It has $active_sessions active sessions with $active_streams active streams and room for $remaining_calls additional calls.";
+	$exitcode = 0;
+}else{
+	$display .= "WARNING: RTP Proxy $opt_H:$baseport responded in $elapsed ms after $testerrortotal failures. It has $active_sessions active sessions with $active_streams active streams and room for $remaining_calls additional calls.";
+        $exitcode = 1;
+}
+
 #now get media ports and test the media
 #If our version of rtpproxy does not support this feature we fake it.
 unless ($remaining_calls){
@@ -302,13 +310,14 @@ if ((($testerrortotal == 0) && ($icmp_responsed==0)) && ($response_timeout ==0))
         }elsif ($exitcode ==1){
                 print ("$opt_H $opt_P $display");
         }else{
-		print ("$opt_H $opt_P CRITCAL:SPR has not responded correctly after $testerrortotal attempts.");
+		print ("$opt_H $opt_P CRITCAL:RTPProxy has not responded correctly after $testerrortotal attempts.");
 		$exitcode = 2;
         }
 }
 print ("|Response_Time=$elapsed"."ms;; ICMP=$icmp_responsed;; Errors=$errors;; Timeouts=$response_timeout;;");
 if ($mediatest){
         print" Lost_Packets=$Percent_packets_lost"."%;; Late_Packets=$Percent_Packets_late"."%;; Strange_Packets=$Percent_Strange_Packets"."%;; Media_ICMP_Packets=$Percent_ICMP_Packets"."%;; Duplicated_Packets=$Percent_Duplicated_Packets"."%;;";
+	print" Active_Sessions=$active_sessions;; Active_Streams=$active_streams;; Sessions_Created=$sessions_created;; Additional_Capacity=$remaining_calls;;";
         print" Unsent_Packets=$Packets_Not_Sent;; AVG_Packet_Transit_Time=$Average_Packet_Travel_Time"."ms;; Standard_Deviation_Packet_Transit_Time=$Standard_Deviation_Travel_Time"."ms;; AVG_Jitter=$Average_Jitter;; Standard_Deviation_Jitter=$Standard_Deviation_Jitter;;\n";
 
 }
