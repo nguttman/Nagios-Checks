@@ -428,7 +428,8 @@ sub usage {
 	print "                    You will need to a \\ prior to the @ for this to work EX. report\\\@company.net\n";
 	print " -o|from-email,    Email address to use for the From field - Default is nagios\\\@localhost.net\n";
         print "** To read a report from a file **\n";
-	print " -l|filename,      Full filename (with path) where you the report can be found.\n";
+	print " -l|filename,      Full filename (with path) where you desire the report.\n";
+        print " 	            This option will automatically rotate the old file out.\n";
         print "Script written by Noah Guttman and Copyright (C) 2014 Noah Guttman.\n";
         print "This script is released and distributed under the terms of the GNU\n";
         print "General Public License.     >>>>    http://www.gnu.org/licenses/\n";

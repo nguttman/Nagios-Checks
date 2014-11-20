@@ -254,12 +254,12 @@ if ($relative_start_time){
 }
 $query_string .= "| awk \'{print \$1 \"\ \" \$2}\'";
 
-print "***Query***\n$query_string\n*******\n";
+#print "***Query***\n$query_string\n*******\n";
 
 
 $raw_data = `$query_string`;
 
-print "***Raw data***\n$raw_data*******\n";
+#print "***Raw data***\n$raw_data*******\n";
 
 @lines = split("\n",$raw_data);
 
