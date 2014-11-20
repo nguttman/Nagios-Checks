@@ -48,9 +48,11 @@ if ($#ARGV le 0) {
 if ($opt_h){
 	print "::Process Resource Usage Check Instructions::\n\n";
 	print " -h,		Display this help information\n";
-	print " -C,		Specify a check type: CPU(percent), Memory(percent), VSZ, RSS, stats\n";
+	print " -C,		Specify a check type: CPU(percent), ICPU(percent), Memory(percent), VSZ, RSS, stats\n";
         print "                  If stats is selected the check will report all four stats and only alert if\n";
         print "                  the process is not running\n";
+        print "                  ICPU get the instantataeous CPU value from top rather than using the average from ps.\n";
+        print "                  WARNING! the ICPU option is more limmited. when using it by PID it ignores all children\n";
         print " -w,		Specify a warning level for the check\n";
         print "                  The default is 60 percent or 1000000 kilobytes\n";
         print " -c,		Specify a critical level for the check\n";
@@ -107,6 +109,8 @@ if ((($opt_C eq "cpu") || ($opt_C eq "Cpu")) || ($opt_C eq "CPU")){
 	$checktoken="6";
 }elsif ($opt_C eq "stats"){
 	$checktoken="7";
+}elsif ($opt_C eq "ICPU"){
+	$checktoken="8";
 }else{	
 	print "No valid check type defined. us -h for help\n";
 	exit 3;
@@ -114,7 +118,7 @@ if ((($opt_C eq "cpu") || ($opt_C eq "Cpu")) || ($opt_C eq "CPU")){
 			
 ##Set Warning and critical levels
 
-if (($checktoken==3)||($checktoken==4)){
+if ((($checktoken==3)||($checktoken==4))||($checktoken==8)){
 	if ($opt_w && ($opt_c)) {
 		$warning = $opt_w;
 		$critical = $opt_c;
@@ -196,9 +200,30 @@ if ($checktoken == 3){
       	 		}
 		}
 	}
+}elsif ($checktoken == 8){
+        if ($opt_P){
+                foreach $line (`/usr/bin/top -b -n 1 -p $PID |tail -2 |head -1 |awk \'{print \$9}\'`){
+                        if ($line !~ /^$/){
+                                $total_proc = $line + $total_proc;
+                        }
+                }
+        }elsif ($opt_p){
+                foreach $line (`/usr/bin/top -b -n 1|grep -vw grep |grep -vw check_process_resources |grep $opt_p |awk \'{print \$9}\'`){
+                        if ($line !~ /^$/){
+                                $total_proc = $line + $total_proc;
+                        }
+                }
+        }elsif ($opt_a){
+                foreach $line (`/usr/bin/top -b -n 1 -c |grep -vw grep |grep -vw check_process_resources |grep $opt_a |awk \'{print \$9}\'`){
+                        if ($line !~ /^$/){
+                                $total_proc = $line + $total_proc;
+                        }
+                }
+        }
+
 }elsif ($checktoken == 4){
 	if ($opt_P){
-		foreach $line (`/bin/ps -eo ppid,pid,pcpu,pmem,vsz,rss,cmd --no-header |grep -vw grep |grep -vw check_process_resources |grep " $PID " |awk \'{print \$4}\'`){
+		foreach $line (`/bin/ps -eo ppid,pid,pcpu,pmem,vsz,rss,cmd --no-header |grep -vw grep |grep -vw check_process_resources |grep " $PID "|awk \'{print \$4}\'`){
 			if ($line !~ /^$/){
                		 	$total_proc = $line + $total_proc;
       	 		}
@@ -263,7 +288,7 @@ if ($checktoken == 3){
 	my $prss;
 	my $pvsz;
         if ($opt_P){
-                foreach $line (`/bin/ps -eo ppid,pid,pcpu,pmem,vsz,rss,cmd --no-header |grep -vw grep |grep -vw check_process_resources |grep $PID |awk \'{print \$3" "\$4" " \$5" " \$6}\'`){
+                foreach $line (`/bin/ps -eo ppid,pid,pcpu,pmem,vsz,rss,cmd --no-header |grep -vw grep |grep -vw check_process_resources |grep " $PID " |awk \'{print \$3" "\$4" " \$5" " \$6}\'`){
                         if ($line !~ /^$/){
 				@lineoutput = split(" ",$line);
 				$pcpu = $pcpu + $lineoutput[0];
@@ -304,7 +329,7 @@ if ($checktoken == 3){
 if ($checktoken == 7){
 	print ("OK:Process $returnname is running| $total_proc\n");
 	exit 0;
-}elsif (($checktoken==3) || ($checktoken==4)){
+}elsif ((($checktoken==3) || ($checktoken==4)) || ($checktoken==8)){
         if ($total_proc < $warning){
 	        $total_proc=$total_proc."%";
                 print ("Process $returnname OK: $total_proc $opt_C |$opt_C=$total_proc\n");
