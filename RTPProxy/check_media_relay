@@ -242,10 +242,11 @@ sub main_procedure{
                 $Percent_Duplicated_Packets = 0;
 		$average_packet_travel_time = 0;
 	}
+	#print "$Percent_Late_Packets $Percent_Strange_Packets $Percent_ICMP_Packets $Percent_Duplicated_Packets $average_packet_travel_time $standard_deviation_travel_time $average_jitter $standard_deviation_jitter \n";
 	printf("%.4f %.4f %.4f %.4f %.4f ",$Percent_Lost_Packets,$Percent_Late_Packets,$Percent_Strange_Packets,$Percent_ICMP_Packets,$Percent_Duplicated_Packets);
-        printf("%.4f %.4f ", $average_packet_travel_time,$standard_deviation_travel_time);
-        print("$packets_not_sent ");
-        printf("%.4f %.4f ",$average_jitter,$standard_deviation_jitter);
+	printf("%.4f %.4f ", $average_packet_travel_time,$standard_deviation_travel_time);
+	print("$packets_not_sent ");
+	printf("%.4f %.4f ",$average_jitter,$standard_deviation_jitter);
 	
 	exit 0;
 }
@@ -279,8 +280,8 @@ sub send_media_to_originator {
 		$send_packet->payload($data);
 		$send_packet->seq_num_increment();
 		$packet_transmition_time = gettimeofday();
-		$packet_transmition_time = (substr($packet_transmition_time, -11) * 100000);
-		$packet_transmition_time = (substr($packet_transmition_time, -10));
+		$packet_transmition_time = (substr($packet_transmition_time, -10) * 100000);
+		$packet_transmition_time = (substr($packet_transmition_time, -9));
 		$send_packet->timestamp($packet_transmition_time);
 		$rtp_chunk = $send_packet->encode($data);
 		$packet_sent =1;
@@ -321,8 +322,8 @@ sub send_media_to_terminator {
 		$send_packet->payload($data);
 		$send_packet->seq_num_increment();
                 $packet_transmition_time = gettimeofday() ;
-		$packet_transmition_time = (substr($packet_transmition_time, -11) * 100000);
-		$packet_transmition_time = (substr($packet_transmition_time, -10));
+		$packet_transmition_time = (substr($packet_transmition_time, -10) * 100000);
+		$packet_transmition_time = (substr($packet_transmition_time, -9));
                 $send_packet->timestamp($packet_transmition_time);
 		#$send_packet->timestamp_increment( PAYLOAD_SIZE );
 		$rtp_chunk = $send_packet->encode($data);
@@ -363,13 +364,15 @@ sub recv_media_from_terminator {
 			$packet->decode($received_packet_from_terminator); 
 			if ($terminator_ssrc == $packet->ssrc()){
 				$packet_arrival_time = gettimeofday();
-                        	$packet_arrival_time = (substr($packet_arrival_time, -11) *100000);
-				$packet_arrival_time = (substr($packet_arrival_time, -10));
+                        	$packet_arrival_time = (substr($packet_arrival_time, -10) *100000);
+				$packet_arrival_time = (substr($packet_arrival_time, -9));
                         	$packet_send_time = $packet->timestamp();
+				#print "packet_send_time $packet_send_time , packet_arrival_time $packet_arrival_time\n";
 				$packet_travel_time = (($packet_arrival_time - $packet_send_time) /100);
 				push(@packet_trip_time, $packet_travel_time);
 				$current_jitter = ($current_jitter + (abs(($packet_arrival_time - $previous_packet_arrival_time) - ($packet_send_time - $previous_packet_send_time)) - $current_jitter)/16);
 				push(@packet_jitter, $current_jitter);
+				#print "packet_travel_time : $packet_travel_time current_jitter : $current_jitter \n";
 				$previous_packet_send_time = $packet_send_time;
 				$previous_packet_arrival_time = $packet_arrival_time;
 				$packets_recived++;
@@ -429,13 +432,15 @@ sub recv_media_from_originator {
 			$packet->decode($received_packet_from_originator); 
 	                if ($originator_ssrc == $packet->ssrc()){
                                 $packet_arrival_time = gettimeofday();
-                                $packet_arrival_time = (substr($packet_arrival_time, -11) *100000);
-				$packet_arrival_time = (substr($packet_arrival_time, -10));
+                                $packet_arrival_time = (substr($packet_arrival_time, -10) *100000);
+				$packet_arrival_time = (substr($packet_arrival_time, -9));
                                 $packet_send_time = $packet->timestamp();
+				#print "packet_send_time $packet_send_time , packet_arrival_time $packet_arrival_time\n";
                                 $packet_travel_time = (($packet_arrival_time - $packet_send_time) /100);
                                 push(@packet_trip_time, $packet_travel_time);
 				$current_jitter = ($current_jitter + (abs(($packet_arrival_time - $previous_packet_arrival_time) - ($packet_send_time - $previous_packet_send_time)) - $current_jitter)/16);
 				push(@packet_jitter, $current_jitter);
+				#print "packet_travel_time : $packet_travel_time current_jitter : $current_jitter \n";
                                 $previous_packet_send_time = $packet_send_time;
                                 $previous_packet_arrival_time = $packet_arrival_time;
 				
