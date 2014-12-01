@@ -7,6 +7,7 @@
 use lib "/usr/lib/perl5/5.8.8/";
 use lib "/usr/lib/perl5/5.8.8/Getopt/";
 
+use warnings;
 use strict;
 use Getopt::Std;
 
@@ -48,11 +49,11 @@ if ($#ARGV le 0) {
 if ($opt_h){
 	print "::Process Resource Usage Check Instructions::\n\n";
 	print " -h,		Display this help information\n";
-	print " -C,		Specify a check type: CPU(%), ICPU(%), ACPU(%), Memory(%), VSZ, RSS, stats\n";
-        print "                  If stats is selected the check will report CPU,Memory, VSZ and RSS. It will\n";
+	print " -C,		Specify a check type: PCPU(%), ICPU(%), ACPU(%), Memory(%), VSZ, RSS, stats\n";
+        print "                  If stats is selected the check will report CPU,Memory, VSZ,RSS and ACPU. It will\n";
         print "                  only alert ifthe process is not running\n";
-        print "                  ICPU get the instantataeous CPU value from top rather than using the average from ps.\n";
-        print "                  WARNING! the ICPU option is more limmited. when using it by PID it ignores all children\n";
+        print "                  PCPU uses the ps command.\n";
+        print "                  ICPU uses top with a 1 second sample rather than using the average from ps.\n";
         print "                  ACPU uses the files under /proc/ to get the average CPU since the last check run.\n";
         print "                  Note: The ACPU option only works with a PID file\n";
         print " -w,		Specify a warning level for the check\n";
@@ -101,19 +102,19 @@ if ($opt_M){
 }
 
 ##set which column of the ps to check
-if ($opt_C =~ m\cpu\i){
+if ($opt_C =~ m\pcpu\i){
 	$checktoken=3;
-}elsif ((($opt_C eq "memory") || ($opt_C eq "Memory")) || ($opt_C eq "MEMORY")){
+}elsif ($opt_C =~ m\memory\i){
 	$checktoken=4;
-}elsif ($opt_C eq "VSZ"){
+}elsif ($opt_C =~ m\vsz\i){
      	$checktoken="5";
-}elsif ($opt_C eq "RSS"){
+}elsif ($opt_C =~ m\rss\i){
 	$checktoken="6";
-}elsif ($opt_C eq "stats"){
+}elsif ($opt_C =~ m\stats\i){
 	$checktoken="7";
-}elsif ($opt_C eq "ICPU"){
+}elsif ($opt_C =~ m\icpu\i){
 	$checktoken="8";
-}elsif ($opt_C eq "ACPU"){
+}elsif ($opt_C =~ m\acpu\i){
         $checktoken="9";
 }else{	
 	print "No valid check type defined. use -h for help\n";
@@ -186,41 +187,46 @@ if ($processesrunning < 1) {
 #Checking the actual stats
 if (($checktoken< 7) &&($checktoken > 2)){
 	if ($opt_P){
-		foreach $line (`/bin/ps -eo ppid,pid,pcpu,pmem,vsz,rss,cmd --no-header |grep -vw grep |grep -vw check_process_resources |grep -w $PID |awk \'{print \$$checktoken}\'`){
+		foreach $line (`/bin/ps -eo ppid,pid,pcpu,pmem,vsz,rss,cmd --no-header |grep -vw grep |grep -vw check_process |grep -w $PID |awk \'{print \$$checktoken}\'`){
                         if ($line !~ /^$/){
-			 	$total_proc = $line + $total_proc;
+			 	$total_proc += $line;
 			}
 		}
 	}elsif ($opt_p){
-		foreach $line (`/bin/ps -eo ppid,pid,pcpu,pmem,vsz,rss,comm --no-header |grep -vw grep |grep -vw check_process_resources |grep $opt_p |awk \'{print \$$checktoken}\'`){
+		foreach $line (`/bin/ps -eo ppid,pid,pcpu,pmem,vsz,rss,comm --no-header |grep -vw grep |grep -vw check_process |grep $opt_p |awk \'{print \$$checktoken}\'`){
 			if ($line !~ /^$/){
-               		 	$total_proc = $line + $total_proc;
+               		 	$total_proc += $line;
       	 		}
 		}
 	}elsif ($opt_a){
-		foreach $line (`/bin/ps -eo ppid,pid,pcpu,pmem,vsz,rss,cmd --no-header |grep -vw grep |grep -vw check_process_resources |grep $opt_a |awk \'{print \$$checktoken}\'`){
+		foreach $line (`/bin/ps -eo ppid,pid,pcpu,pmem,vsz,rss,cmd --no-header |grep -vw grep |grep -vw check_process |grep $opt_a |awk \'{print \$$checktoken}\'`){
 			if ($line !~ /^$/){
-               		 	$total_proc = $line + $total_proc;
+               		 	$total_proc += $line;
       	 		}
 		}
 	}
 }elsif ($checktoken == 8){
         if ($opt_P){
-                foreach $line (`/usr/bin/top -b -n 1 -p $PID |tail -2 |head -1 |awk \'{print \$9}\'`){
+		my $top_list="";
+		foreach $line (`/bin/ps -eo ppid,pid --no-header |grep -vw grep |grep -vw check_process |grep -w $PID|awk \'{print \$2}\'`){
+			chomp($line);
+			$top_list .="-p $line ";
+		}
+                foreach $line (`/usr/bin/top -b -n 1 $top_list |tail -2 |head -1 |awk \'{print \$9}\'`){
                         if ($line !~ /^$/){
-                                $total_proc = $line + $total_proc;
+                                $total_proc += $line;
                         }
                 }
         }elsif ($opt_p){
-                foreach $line (`/usr/bin/top -b -n 1|grep -vw grep |grep -vw check_process_resources |grep $opt_p |awk \'{print \$9}\'`){
+                foreach $line (`/usr/bin/top -b -n 1|grep -vw grep |grep -vw check_process |grep $opt_p |awk \'{print \$9}\'`){
                         if ($line !~ /^$/){
-                                $total_proc = $line + $total_proc;
+                                $total_proc += $line;
                         }
                 }
         }elsif ($opt_a){
-                foreach $line (`/usr/bin/top -b -n 1 -c |grep -vw grep |grep -vw check_process_resources |grep $opt_a |awk \'{print \$9}\'`){
+                foreach $line (`/usr/bin/top -b -n 1 -c |grep -vw grep |grep -vw check_process |grep $opt_a |awk \'{print \$9}\'`){
                         if ($line !~ /^$/){
-                                $total_proc = $line + $total_proc;
+                                $total_proc += $line;
                         }
                 }
         }
@@ -228,19 +234,19 @@ if (($checktoken< 7) &&($checktoken > 2)){
 
 }elsif ($checktoken == 7){
 	my @lineoutput;
-	my $pcpu;
-	my $pmem;
-	my $prss;
-	my $pvsz;
-	my $acpu;
+	my $pcpu=0;
+	my $pmem=0;
+	my $prss=0;
+	my $pvsz=0;
+	my $acpu=0;
         if ($opt_P){
                 foreach $line (`/bin/ps -eo ppid,pid,pcpu,pmem,vsz,rss,cmd --no-header |grep -vw grep |grep -vw check_process_resources |grep " $PID " |awk \'{print \$3" "\$4" " \$5" " \$6}\'`){
                         if ($line !~ /^$/){
 				@lineoutput = split(" ",$line);
-				$pcpu = $pcpu + $lineoutput[0];
-				$pmem = $pmem + $lineoutput[1];
-				$prss = $prss + $lineoutput[2];
-				$pvsz = $pvsz + $lineoutput[3];
+				$pcpu += $lineoutput[0];
+				$pmem += $lineoutput[1];
+				$prss += $lineoutput[2];
+				$pvsz += $lineoutput[3];
                         }
                 }
 	        my $old_process_cpu;
