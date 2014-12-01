@@ -39,7 +39,7 @@ my $restartcommand='';
 
 # Get the options
 if ($#ARGV le 0) {
-	$opt_h = 1;
+	usage();
 } else {
 	getopts('hC:p:a:c:d:w:M:N:P:R:');
 }
@@ -47,6 +47,9 @@ if ($#ARGV le 0) {
 
 ## Display Help
 if ($opt_h){
+	usage();
+}
+sub usage {
 	print "::Process Resource Usage Check Instructions::\n\n";
 	print " -h,		Display this help information\n";
 	print " -C,		Specify a check type: PCPU(%), ICPU(%), ACPU(%), Memory(%), VSZ, RSS, stats\n";
@@ -90,7 +93,42 @@ if ($opt_h){
         exit 0; 
 }
 
-
+sub average_cpu {
+	my $old_process_cpu;
+        my $current_process_cpu;
+        my $old_system_cpu;
+        my $current_system_cpu;
+        my $temp_file = "/tmp/$PID"."_cpu.tmp";
+        my $input;
+	my $results;
+        my $commandstring;
+        if (-e $temp_file){
+		#First we load the old data
+                $input = `cat $temp_file`;
+                ($old_system_cpu, $old_process_cpu) = split(" ",$input);
+        }
+        #next we load the current data
+        $current_system_cpu = `cat /proc/stat |grep \"cpu \" |awk \'{print \$2+\$3+\$4+\$5+\$6+\$7}\'`;
+        chomp($current_system_cpu);
+        $current_process_cpu = `cat /proc/$PID/stat |awk \'{print \$14+\$15+\$16+\$17}\'`;
+        chomp($current_process_cpu);
+        if (-e $temp_file){
+        	#now we dump the old temp file
+                $commandstring = ("/bin/rm -f $temp_file");
+                system ($commandstring);
+        }
+        # write the new one
+        $commandstring = ("/bin/echo -n \'$current_system_cpu $current_process_cpu\' \>\> $temp_file");
+        system ($commandstring);
+        #we check to see if we have data to compare
+        if (($old_process_cpu) && ($old_system_cpu)){
+        	#now we can calculate the CPU usage
+                $results = ((($current_process_cpu - $old_process_cpu) /($current_system_cpu - $old_system_cpu)) *100);
+                #round for significant digits
+                $results = sprintf("%.4f",$results);
+		return $results;
+        }
+}
 
 
 
@@ -102,7 +140,11 @@ if ($opt_M){
 }
 
 ##set which column of the ps to check
-if ($opt_C =~ m\pcpu\i){
+if ($opt_C =~ m\icpu\i){
+        $checktoken="8";
+}elsif ($opt_C =~ m\acpu\i){
+        $checktoken="9";
+}elsif (($opt_C =~ m\pcpu\i) || ($opt_C =~ m\cpu\i)){
 	$checktoken=3;
 }elsif ($opt_C =~ m\memory\i){
 	$checktoken=4;
@@ -112,13 +154,9 @@ if ($opt_C =~ m\pcpu\i){
 	$checktoken="6";
 }elsif ($opt_C =~ m\stats\i){
 	$checktoken="7";
-}elsif ($opt_C =~ m\icpu\i){
-	$checktoken="8";
-}elsif ($opt_C =~ m\acpu\i){
-        $checktoken="9";
 }else{	
-	print "No valid check type defined. use -h for help\n";
-	exit 3;
+	print "No valid check type defined.\n\n";
+	usage();
 }
 			
 ##Set Warning and critical levels
@@ -140,11 +178,9 @@ if (((($checktoken==3)||($checktoken==4))||($checktoken==8)) || ($checktoken==9)
 		$critical =2000000;
 	}	
 }elsif ($checktoken!="7"){
-        print "No valid check type defined. Ese -h for help\n";
-        exit 0;
+        print "No valid check type defined.\n\n";
+	usage();
 }
-
-##Process arguments
 
 ##Set the return name
 if ($opt_N){
@@ -156,6 +192,7 @@ if ($opt_N){
 }elsif ($opt_a){
 	$returnname=$opt_a;
 }
+
 ##Check to see if the process is running
 if ($opt_P){
         if (-e $opt_P){
@@ -249,41 +286,7 @@ if (($checktoken< 7) &&($checktoken > 2)){
 				$pvsz += $lineoutput[3];
                         }
                 }
-	        my $old_process_cpu;
-	        my $current_process_cpu;
-	        my $old_system_cpu;
-	        my $current_system_cpu;
-	        my $temp_file = "/tmp/$PID"."_cpu.tmp";
-	        my $input;
-	        my $commandstring;
-	        if (-e $temp_file){
-	                #First we load the old data
-	                $input = `cat $temp_file`;
-	                ($old_system_cpu, $old_process_cpu) = split(" ",$input);
-	        }
-	        #First we load the old data
-	        $input = `cat $temp_file`;
-	        ($old_system_cpu, $old_process_cpu) = split(" ",$input);
-	        #next we load the current data
-	        $current_system_cpu = `cat /proc/stat |grep \"cpu \" |awk \'{print \$2+\$3+\$4+\$5+\$6+\$7}\'`;
-	        chomp($current_system_cpu);
-	        $current_process_cpu = `cat /proc/$PID/stat |awk \'{print \$14+\$15+\$16+\$17}\'`;
-	        chomp($current_process_cpu);
-	        if (-e $temp_file){
-	                #now we dump the old temp file
-	                $commandstring = ("/bin/rm -f $temp_file");
-	                system ($commandstring);
-	        }
-	        # write the new one
-	        $commandstring = ("/bin/echo -n \'$current_system_cpu $current_process_cpu\' \>\> $temp_file");
-	        system ($commandstring);
-	        #we check to see if we have data to compare
-	        if (($old_process_cpu) && ($old_system_cpu)){
-	                #now we can calculate the CPU usage
-	                $acpu = ((($current_process_cpu - $old_process_cpu) /($current_system_cpu - $old_system_cpu)) *100);
-	                #round for significant digits
-	                $acpu = sprintf("%.4f",$acpu);
-	        }
+		$acpu = average_cpu();
         }elsif ($opt_p){
                 foreach $line (`/bin/ps -eo ppid,pid,pcpu,pmem,vsz,rss,comm --no-header |grep -vw grep |grep -vw check_process_resources |grep $opt_p |awk \'{print \$3" "\$4" " \$5" " \$6}\'`){
                         if ($line !~ /^$/){
@@ -314,53 +317,16 @@ if (($checktoken< 7) &&($checktoken > 2)){
 		print "You must specify a .pid file with ACPU. Use -h for help\n";
 		exit 0;
 	}
-	my $old_process_cpu;
-	my $current_process_cpu;
-	my $old_system_cpu;
-	my $current_system_cpu;
-	my $temp_file = "/tmp/$PID"."_cpu.tmp";
-	my $input;
-	my $commandstring;
-	if (-e $temp_file){
-		#First we load the old data
-	        $input = `cat $temp_file`;
-	        ($old_system_cpu, $old_process_cpu) = split(" ",$input);
-	}else{
-		print "First time running check, or process has restarted since last run\n";
-	}
-	#First we load the old data
-	$input = `cat $temp_file`;
-	($old_system_cpu, $old_process_cpu) = split(" ",$input);
-	#next we load the current data
-	$current_system_cpu = `cat /proc/stat |grep \"cpu \" |awk \'{print \$2+\$3+\$4+\$5+\$6+\$7}\'`;
-	chomp($current_system_cpu);
-	$current_process_cpu = `cat /proc/$PID/stat |awk \'{print \$14+\$15+\$16+\$17}\'`;
-	chomp($current_process_cpu);
-	if (-e $temp_file){
-		#now we dump the old temp file
-		$commandstring = ("/bin/rm -f $temp_file");
-		system ($commandstring);
-	}
-	# write the new one
-	$commandstring = ("/bin/echo -n \'$current_system_cpu $current_process_cpu\' \>\> $temp_file");
-	system ($commandstring);
-	#we check to see if we have data to compare
-	if (($old_process_cpu) && ($old_system_cpu)){
-		#now we can calculate the CPU usage
-		$total_proc = ((($current_process_cpu - $old_process_cpu) /($current_system_cpu - $old_system_cpu)) *100);
-		#round for significant digits
-		$total_proc = sprintf("%.4f",$total_proc);
-	}else{
-		exit 0;
-	}
+	$total_proc=average_cpu();
 }else{
-	print "There is an error with your check's syntax. Use -h for help\n";
-	exit 0;
+	print "There is an error with your check's syntax.\n\n";
+	usage();
 }
 
 
-## do the check and return the results
+## Check if we need to alaert and return the results
 if ($checktoken == 7){
+	#we already verified that the process was running
 	print ("OK:Process $returnname is running| $total_proc\n");
 	exit 0;
 }elsif (((($checktoken==3) || ($checktoken==4)) || ($checktoken==8)) || ($checktoken==9)){
