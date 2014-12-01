@@ -101,8 +101,8 @@ if ($opt_M){
 }
 
 ##set which column of the ps to check
-if ((($opt_C eq "cpu") || ($opt_C eq "Cpu")) || ($opt_C eq "CPU")){
-	$checktoken=3
+if ($opt_C =~ m\cpu\i){
+	$checktoken=3;
 }elsif ((($opt_C eq "memory") || ($opt_C eq "Memory")) || ($opt_C eq "MEMORY")){
 	$checktoken=4;
 }elsif ($opt_C eq "VSZ"){
@@ -184,9 +184,9 @@ if ($processesrunning < 1) {
 
 # Setting Variables with Monitoring Process and Custom Check Tokens  THIS RUNS THE CHECK
 #Checking the actual stats
-if (((($checktoken==3)||($checktoken==4))||($checktoken==5))||($checktoken==6)){
+if (($checktoken< 7) &&($checktoken > 2)){
 	if ($opt_P){
-		foreach $line (`/bin/ps -eo ppid,pid,pcpu,pmem,vsz,rss,cmd --no-header |grep -vw grep |grep -vw check_process_resources |grep -w " $PID " |awk \'{print \$$checktoken}\'`){
+		foreach $line (`/bin/ps -eo ppid,pid,pcpu,pmem,vsz,rss,cmd --no-header |grep -vw grep |grep -vw check_process_resources |grep -w $PID |awk \'{print \$$checktoken}\'`){
                         if ($line !~ /^$/){
 			 	$total_proc = $line + $total_proc;
 			}
