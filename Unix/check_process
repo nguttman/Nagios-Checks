@@ -184,21 +184,21 @@ if ($processesrunning < 1) {
 
 # Setting Variables with Monitoring Process and Custom Check Tokens  THIS RUNS THE CHECK
 #Checking the actual stats
-if ($checktoken == 3){
+if (((($checktoken==3)||($checktoken==4))||($checktoken==5))||($checktoken==6)){
 	if ($opt_P){
-		foreach $line (`/bin/ps -eo ppid,pid,pcpu,pmem,vsz,rss,cmd --no-header |grep -vw grep |grep -vw check_process_resources |grep -w " $PID " |awk \'{print \$3}\'`){
+		foreach $line (`/bin/ps -eo ppid,pid,pcpu,pmem,vsz,rss,cmd --no-header |grep -vw grep |grep -vw check_process_resources |grep -w " $PID " |awk \'{print \$$checktoken}\'`){
                         if ($line !~ /^$/){
 			 	$total_proc = $line + $total_proc;
 			}
 		}
 	}elsif ($opt_p){
-		foreach $line (`/bin/ps -eo ppid,pid,pcpu,pmem,vsz,rss,comm --no-header |grep -vw grep |grep -vw check_process_resources |grep $opt_p |awk \'{print \$3}\'`){
+		foreach $line (`/bin/ps -eo ppid,pid,pcpu,pmem,vsz,rss,comm --no-header |grep -vw grep |grep -vw check_process_resources |grep $opt_p |awk \'{print \$$checktoken}\'`){
 			if ($line !~ /^$/){
                		 	$total_proc = $line + $total_proc;
       	 		}
 		}
 	}elsif ($opt_a){
-		foreach $line (`/bin/ps -eo ppid,pid,pcpu,pmem,vsz,rss,cmd --no-header |grep -vw grep |grep -vw check_process_resources |grep $opt_a |awk \'{print \$3}\'`){
+		foreach $line (`/bin/ps -eo ppid,pid,pcpu,pmem,vsz,rss,cmd --no-header |grep -vw grep |grep -vw check_process_resources |grep $opt_a |awk \'{print \$$checktoken}\'`){
 			if ($line !~ /^$/){
                		 	$total_proc = $line + $total_proc;
       	 		}
@@ -225,66 +225,7 @@ if ($checktoken == 3){
                 }
         }
 
-}elsif ($checktoken == 4){
-	if ($opt_P){
-		foreach $line (`/bin/ps -eo ppid,pid,pcpu,pmem,vsz,rss,cmd --no-header |grep -vw grep |grep -vw check_process_resources |grep " $PID "|awk \'{print \$4}\'`){
-			if ($line !~ /^$/){
-               		 	$total_proc = $line + $total_proc;
-      	 		}
-		}
-	}elsif ($opt_p){
-                foreach $line (`/bin/ps -eo ppid,pid,pcpu,pmem,vsz,rss,comm --no-header |grep -vw grep |grep -vw check_process_resources |grep $opt_p |awk \'{print \$4}\'`){
-			if ($line !~ /^$/){
-               		 	$total_proc = $line + $total_proc;
-      	 		}
-		}
-	}elsif ($opt_a){
-		foreach $line (`/bin/ps -eo ppid,pid,pcpu,pmem,vsz,rss,cmd --no-header |grep -vw grep |grep -vw check_process_resources |grep $opt_a |awk \'{print \$4}\'`){
-			if ($line !~ /^$/){
-               		 	$total_proc = $line + $total_proc;
-      	 		}
-		}
-	}
-}elsif ($checktoken == 5){
-	if ($opt_P){
-		foreach $line (`/bin/ps -eo ppid,pid,pcpu,pmem,vsz,rss,cmd --no-header |grep -vw grep |grep -vw check_process_resources |grep " $PID " |awk \'{print \$5}\'`){
-			if ($line !~ /^$/){
-               		 	$total_proc = $line + $total_proc;
-      	 		}
-		}
-	}elsif ($opt_p){
-                foreach $line (`/bin/ps -eo ppid,pid,pcpu,pmem,vsz,rss,comm --no-header |grep -vw grep |grep -vw check_process_resources |grep $opt_p |awk \'{print \$5}\'`){
-			if ($line !~ /^$/){
-               		 	$total_proc = $line + $total_proc;
-      	 		}
-		}
-	}elsif ($opt_a){
-		foreach $line (`/bin/ps -eo ppid,pid,pcpu,pmem,vsz,rss,cmd --no-header |grep -vw grep |grep -vw check_process_resources |grep $opt_a |awk \'{print \$5}\'`){
-			if ($line !~ /^$/){
-               		 	$total_proc = $line + $total_proc;
-     	 		}
-		}
-	}
-}elsif ($checktoken == 6){
-	if ($opt_P){
-		foreach $line (`/bin/ps -eo ppid,pid,pcpu,pmem,vsz,rss,cmd --no-header |grep -vw grep |grep -vw check_process_resources |grep " $PID " |awk \'{print \$6}\'`){
-			if ($line !~ /^$/){
-               		 	$total_proc = $line + $total_proc;
-      	 		}
-		}
-	}elsif ($opt_p){
-                foreach $line (`/bin/ps -eo ppid,pid,pcpu,pmem,vsz,rss,comm --no-header |grep -vw grep |grep -vw check_process_resources |grep $opt_p |awk \'{print \$6}\'`){
-			if ($line !~ /^$/){
-               		 	$total_proc = $line + $total_proc;
-      	 		}
-		}
-	}elsif ($opt_a){
-		foreach $line (`/bin/ps -eo ppid,pid,pcpu,pmem,vsz,rss,cmd --no-header |grep -vw grep |grep -vw check_process_resources |grep $opt_a |awk \'{print \$6}\'`){
-			if ($line !~ /^$/){
-               		 	$total_proc = $line + $total_proc;
-      	 		}
-		}
-	}
+
 }elsif ($checktoken == 7){
 	my @lineoutput;
 	my $pcpu;
