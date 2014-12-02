@@ -117,7 +117,11 @@ sub average_cpu {
                 #round for significant digits
                 $results = sprintf("%.4f",$results);
 		return $results;
-        }
+        }else{
+		#There may be no data this run
+		$results = -1;
+		 return $results;
+	}
 }
 
 
@@ -273,14 +277,20 @@ if (($checktoken< 7) &&($checktoken > 2)){
 	}
 	$total_proc = "CPU=$pcpu"."%;;;; Memory=$pmem"."%;;;; RSS=$prss"."KB;;;; VSZ=$pvsz"."KB;;;;";
 	if ($acpu){
-		$total_proc .= " ACPU=$acpu"."%;;;;"
+		if ($acpu != -1){
+			$total_proc .= " ACPU=$acpu"."%;;;;"
+		}
 	}
 }elsif ($checktoken == 9){
 	unless ($opt_P){
-		print "You must specify a .pid file with ACPU. Use -h for help\n";
-		exit $ERRORS{'OK'};
+		print "You must specify a .pid file with ACPU.\n";
+		usage();
 	}
 	$total_proc=average_cpu();
+	if ($total_proc == -1){
+		print "First time running check, or process has restarted since last check. Data will be available on next run.\n";
+                exit $ERRORS{'OK'};
+	}
 }else{
 	print "There is an error with your check's syntax.\n\n";
 	usage();
