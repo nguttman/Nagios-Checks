@@ -5,8 +5,8 @@
 
 #Libraries to use
 use lib "/usr/local/nagios/libexec";
-use lib "/usr/lib/perl5/5.8.8/";
-use lib "/usr/lib/perl5/5.8.8/Getopt/";
+#use lib "/usr/lib/perl5/5.8.8/";
+#use lib "/usr/lib/perl5/5.8.8/Getopt/";
 
 use utils qw(%ERRORS);
 use warnings;
@@ -15,26 +15,15 @@ use Getopt::Std;
 
 use vars qw($opt_a $opt_c $opt_d $opt_p $opt_w $opt_M $opt_N $opt_P $opt_C $opt_h $opt_R);
 
+my @external_data;
 my $returnmessage = "";
 my $checktoken;
 my $warning;
 my $critical;
 my $PID;
 my $returnname="";
-my $line;
 my $total_proc;
 my $processesrunning=0;
-my $restartcommand='';
-
-## w=primary test warning level
-## c=primary test critical level
-## d=displayname
-## M=error message to display on failure
-## p=processname
-## a=process argument 
-## P=PID number
-## I=PID file
-## T=Primary Check type
 
 ##init();
 
@@ -197,26 +186,25 @@ if ($opt_N){
 ##Check to see if the process is running
 if ($opt_P){
         if (-e $opt_P){
-		$PID = (`/bin/cat $opt_P`);
+		$PID = (`cat $opt_P`);
 		chomp($PID);
-		$processesrunning=(`/bin/ps -eo pid,ppid |grep -vw grep |grep -vw check_process_resources |grep -cw $PID`);
+		$processesrunning=(`ps -eo pid,ppid |grep -vw grep |grep -vw check_process_resources |grep -cw $PID`);
 	}else{
 		$processesrunning=0;
 	}
 }elsif ($opt_p){
-        $processesrunning=(`/bin/ps -eo comm |grep -vw grep |grep -wv check_process_resources |grep -c $opt_p`);
+        $processesrunning=(`ps -eo comm |grep -vw grep |grep -wv check_process_resources |grep -c $opt_p`);
 }elsif ($opt_a){
-        $processesrunning=(`/bin/ps -eo cmd |grep -vw grep |grep -vw check_process_resources |grep -c $opt_a`);
+        $processesrunning=(`ps -eo cmd |grep -vw grep |grep -vw check_process_resources |grep -c $opt_a`);
 }
 chomp($processesrunning);
 # processesrunning is is now the number of running processes
 #Return results and exit if there are no processes running or continue, if there are.
 if ($processesrunning < 1) {
 	if ($opt_R){
-                print ("$opt_R CRITICAL:The $returnname process doesn't appear to be running. $returnmessage\n");
-	}else{
-	        print ("CRITICAL:The $returnname process doesn't appear to be running. $returnmessage\n");
+                print ("$opt_R ");
 	}
+	        print ("CRITICAL:The $returnname process doesn't appear to be running. $returnmessage\n");
 	exit $ERRORS{'CRITICAL'};
 }
 
@@ -225,50 +213,37 @@ if ($processesrunning < 1) {
 #Checking the actual stats
 if (($checktoken< 7) &&($checktoken > 2)){
 	if ($opt_P){
-		foreach $line (`/bin/ps -eo ppid,pid,pcpu,pmem,vsz,rss,cmd --no-header |grep -vw grep |grep -vw check_process |grep -w $PID |awk \'{print \$$checktoken}\'`){
-                        if ($line !~ /^$/){
-			 	$total_proc += $line;
-			}
-		}
+		@external_data = (`ps -eo ppid,pid,pcpu,pmem,vsz,rss,cmd --no-header |grep -vw grep |grep -vw check_process |grep -w $PID |awk \'{print \$$checktoken}\'`);
 	}elsif ($opt_p){
-		foreach $line (`/bin/ps -eo ppid,pid,pcpu,pmem,vsz,rss,comm --no-header |grep -vw grep |grep -vw check_process |grep $opt_p |awk \'{print \$$checktoken}\'`){
-			if ($line !~ /^$/){
-               		 	$total_proc += $line;
-      	 		}
-		}
+		@external_data = (`ps -eo ppid,pid,pcpu,pmem,vsz,rss,comm --no-header |grep -vw grep |grep -vw check_process |grep $opt_p |awk \'{print \$$checktoken}\'`);
 	}elsif ($opt_a){
-		foreach $line (`/bin/ps -eo ppid,pid,pcpu,pmem,vsz,rss,cmd --no-header |grep -vw grep |grep -vw check_process |grep $opt_a |awk \'{print \$$checktoken}\'`){
-			if ($line !~ /^$/){
-               		 	$total_proc += $line;
-      	 		}
-		}
+		@external_data = (`ps -eo ppid,pid,pcpu,pmem,vsz,rss,cmd --no-header |grep -vw grep |grep -vw check_process |grep $opt_a |awk \'{print \$$checktoken}\'`)
+	}
+	foreach my $line (@external_data){
+		 if ($line !~ /^$/){
+                 	$total_proc += $line;
+                 }
 	}
 }elsif ($checktoken == 8){
         if ($opt_P){
 		my $top_list="";
-		foreach $line (`/bin/ps -eo ppid,pid --no-header |grep -vw grep |grep -vw check_process |grep -w $PID|awk \'{print \$2}\'`){
+		foreach my $line (`/bin/ps -eo ppid,pid --no-header |grep -vw grep |grep -vw check_process |grep -w $PID|awk \'{print \$2}\'`){
 			chomp($line);
 			$top_list .="-p $line ";
 		}
-                foreach $line (`/usr/bin/top -b -n 1 $top_list |tail -2 |head -1 |awk \'{print \$9}\'`){
-                        if ($line !~ /^$/){
-                                $total_proc += $line;
-                        }
-                }
+		@external_data = (`top -b -n 1 $top_list |awk \'{print \$9}\'`);
         }elsif ($opt_p){
-                foreach $line (`/usr/bin/top -b -n 1|grep -vw grep |grep -vw check_process |grep $opt_p |awk \'{print \$9}\'`){
-                        if ($line !~ /^$/){
-                                $total_proc += $line;
-                        }
-                }
+		@external_data = (`top -b -n 1|grep -vw grep |grep -vw check_process |grep $opt_p |awk \'{print \$9}\'`);
         }elsif ($opt_a){
-                foreach $line (`/usr/bin/top -b -n 1 -c |grep -vw grep |grep -vw check_process |grep $opt_a |awk \'{print \$9}\'`){
-                        if ($line !~ /^$/){
-                                $total_proc += $line;
-                        }
-                }
+		@external_data = (`top -b -n 1 -c |grep -vw grep |grep -vw check_process |grep $opt_a |awk \'{print \$9}\'`);
         }
-
+        foreach my $line (@external_data){
+                 if ($line !~ /^$/){
+			if ($line =~ /^\d+\.\d+$/){
+                        	$total_proc += $line;
+			}
+                 }
+        }
 
 }elsif ($checktoken == 7){
 	my @lineoutput;
@@ -278,37 +253,24 @@ if (($checktoken< 7) &&($checktoken > 2)){
 	my $pvsz=0;
 	my $acpu=0;
         if ($opt_P){
-                foreach $line (`/bin/ps -eo ppid,pid,pcpu,pmem,vsz,rss,cmd --no-header |grep -vw grep |grep -vw check_process_resources |grep " $PID " |awk \'{print \$3" "\$4" " \$5" " \$6}\'`){
-                        if ($line !~ /^$/){
-				@lineoutput = split(" ",$line);
-				$pcpu += $lineoutput[0];
-				$pmem += $lineoutput[1];
-				$prss += $lineoutput[2];
-				$pvsz += $lineoutput[3];
-                        }
-                }
+		@external_data = (`ps -eo ppid,pid,pcpu,pmem,vsz,rss,cmd --no-header |grep -vw grep |grep -vw check_process_resources |grep " $PID " |awk \'{print \$3" "\$4" " \$5" " \$6}\'`);
 		$acpu = average_cpu();
+
         }elsif ($opt_p){
-                foreach $line (`/bin/ps -eo ppid,pid,pcpu,pmem,vsz,rss,comm --no-header |grep -vw grep |grep -vw check_process_resources |grep $opt_p |awk \'{print \$3" "\$4" " \$5" " \$6}\'`){
-                        if ($line !~ /^$/){
-                                @lineoutput = split(" ",$line);
-                                $pcpu = $pcpu + $lineoutput[0];
-                                $pmem = $pmem + $lineoutput[1];
-                                $prss = $prss + $lineoutput[2];
-                                $pvsz = $pvsz + $lineoutput[3];
-                        }
-                }
+		@external_data = (`ps -eo ppid,pid,pcpu,pmem,vsz,rss,comm --no-header |grep -vw grep |grep -vw check_process_resources |grep $opt_p |awk \'{print \$3" "\$4" " \$5" " \$6}\'`);
+
         }elsif ($opt_a){
-                foreach $line (`/bin/ps -eo ppid,pid,pcpu,pmem,vsz,rss,cmd --no-header |grep -vw grep |grep -vw check_process_resources |grep $opt_a |awk \'{print \$3" "\$4" " \$5" "\$6}\'`){
-                        if ($line !~ /^$/){
-                                @lineoutput = split(" ",$line);
-                                $pcpu = $pcpu + $lineoutput[0];
-                                $pmem = $pmem + $lineoutput[1];
-                                $prss = $prss + $lineoutput[2];
-                                $pvsz = $pvsz + $lineoutput[3];
-                        }
-                }
+		@external_data = (`ps -eo ppid,pid,pcpu,pmem,vsz,rss,cmd --no-header |grep -vw grep |grep -vw check_process_resources |grep $opt_a |awk \'{print \$3" "\$4" " \$5" "\$6}\'`);
         }
+	foreach my $line (@external_data){
+        	if ($line !~ /^$/){
+                	@lineoutput = split(" ",$line);
+                        $pcpu = $pcpu + $lineoutput[0];
+                        $pmem = $pmem + $lineoutput[1];
+                        $prss = $prss + $lineoutput[2];
+                        $pvsz = $pvsz + $lineoutput[3];
+                }
+	}
 	$total_proc = "CPU=$pcpu"."%;;;; Memory=$pmem"."%;;;; RSS=$prss"."KB;;;; VSZ=$pvsz"."KB;;;;";
 	if ($acpu){
 		$total_proc .= " ACPU=$acpu"."%;;;;"
@@ -332,36 +294,36 @@ if ($checktoken == 7){
 	exit $ERRORS{'OK'};
 }elsif (((($checktoken==3) || ($checktoken==4)) || ($checktoken==8)) || ($checktoken==9)){
         if ($total_proc < $warning){
-	        $total_proc=$total_proc."%;$warning;$critical;0;";
-                print ("Process $returnname OK: $total_proc $opt_C |$opt_C=$total_proc\n");
+	        $total_proc=$total_proc."%";
+                print ("Process $returnname OK: $total_proc $opt_C |$opt_C=$total_proc;$warning;$critical;0;\n");
                 exit $ERRORS{'OK'};
 	}elsif (($total_proc >= $warning) && ($total_proc < $critical)){
-	        $total_proc=$total_proc."%;$warning;$critical;0;";
-                print ("Process $returnname WARNING: $total_proc $opt_C $returnmessage |$opt_C=$total_proc\n");
+	        $total_proc=$total_proc."%";
+                print ("Process $returnname WARNING: $total_proc $opt_C $returnmessage |$opt_C=$total_proc;$warning;$critical;0;\n");
                 exit $ERRORS{'WARNING'};
         }else{
-                $total_proc=$total_proc."%;$warning;$critical;0;";
+                $total_proc=$total_proc."%";
 		if ($opt_R){
                         print ("$opt_R ");
 		}
-	        print ("Process $returnname CRITICAL: $total_proc $opt_C $returnmessage |$opt_C=$total_proc\n");
+	        print ("Process $returnname CRITICAL: $total_proc $opt_C $returnmessage |$opt_C=$total_proc;$warning;$critical;0;\n");
 		exit $ERRORS{'CRITICAL'};
         }
 }else{
         if ($total_proc < $warning){
-	        $total_proc=$total_proc."KB;$warning;$critical;0;";
-                print ("Process $returnname OK: $total_proc $opt_C |$opt_C=$total_proc\n");
+	        $total_proc=$total_proc."KB";
+                print ("Process $returnname OK: $total_proc $opt_C |$opt_C=$total_proc;$warning;$critical;0;\n");
                 exit $ERRORS{'OK'};
 	}elsif (($total_proc >= $warning) && ($total_proc < $critical)){
-	        $total_proc=$total_proc."KB;$warning;$critical;0;";
-                print ("Process $returnname WARNING: $total_proc $opt_C $returnmessage |$opt_C=$total_proc\n");
+	        $total_proc=$total_proc."KB";
+                print ("Process $returnname WARNING: $total_proc $opt_C $returnmessage |$opt_C=$total_proc;$warning;$critical;0;\n");
                 exit $ERRORS{'WARNING'};
         }else{
-	        $total_proc=$total_proc."KB;$warning;$critical;0;";
+	        $total_proc=$total_proc."KB";
                 if ($opt_R){
 	                print ("$opt_R ");
 		}
-                print ("Process $returnname CRITICAL: $total_proc $opt_C $returnmessage |$opt_C=$total_proc\n");
+                print ("Process $returnname CRITICAL: $total_proc $opt_C $returnmessage |$opt_C=$total_proc;$warning;$critical;0;\n");
                 exit $ERRORS{'CRITICAL'};
         }
 }
