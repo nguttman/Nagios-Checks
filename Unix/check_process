@@ -4,15 +4,16 @@
 ## Script written by Noah Guttman and Copyright (C) 2011 Noah Guttman. This script is released and distributed under the terms of the GNU General Public License
 
 #Libraries to use
+use lib "/usr/local/nagios/libexec";
 use lib "/usr/lib/perl5/5.8.8/";
 use lib "/usr/lib/perl5/5.8.8/Getopt/";
 
+use utils qw(%ERRORS);
 use warnings;
 use strict;
 use Getopt::Std;
 
 use vars qw($opt_a $opt_c $opt_d $opt_p $opt_w $opt_M $opt_N $opt_P $opt_C $opt_h $opt_R);
-
 
 my $returnmessage = "";
 my $checktoken;
@@ -90,7 +91,7 @@ sub usage {
         print "MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n";
         print "GNU General Public License for more details.\n";
         print ">>>>    http://www.gnu.org/licenses/\n";
-        exit 0; 
+        exit $ERRORS{'OK'}; 
 }
 
 sub average_cpu {
@@ -216,7 +217,7 @@ if ($processesrunning < 1) {
 	}else{
 	        print ("CRITICAL:The $returnname process doesn't appear to be running. $returnmessage\n");
 	}
-	exit 2;
+	exit $ERRORS{'CRITICAL'};
 }
 
 
@@ -315,7 +316,7 @@ if (($checktoken< 7) &&($checktoken > 2)){
 }elsif ($checktoken == 9){
 	unless ($opt_P){
 		print "You must specify a .pid file with ACPU. Use -h for help\n";
-		exit 0;
+		exit $ERRORS{'OK'};
 	}
 	$total_proc=average_cpu();
 }else{
@@ -328,45 +329,43 @@ if (($checktoken< 7) &&($checktoken > 2)){
 if ($checktoken == 7){
 	#we already verified that the process was running
 	print ("OK:Process $returnname is running| $total_proc\n");
-	exit 0;
+	exit $ERRORS{'OK'};
 }elsif (((($checktoken==3) || ($checktoken==4)) || ($checktoken==8)) || ($checktoken==9)){
         if ($total_proc < $warning){
-	        $total_proc=$total_proc."%";
+	        $total_proc=$total_proc."%;$warning;$critical;0;";
                 print ("Process $returnname OK: $total_proc $opt_C |$opt_C=$total_proc\n");
-                exit 0;
-	}elsif (($total_proc > $warning) && ($total_proc < $critical)){
-	        $total_proc=$total_proc."%";
+                exit $ERRORS{'OK'};
+	}elsif (($total_proc >= $warning) && ($total_proc < $critical)){
+	        $total_proc=$total_proc."%;$warning;$critical;0;";
                 print ("Process $returnname WARNING: $total_proc $opt_C $returnmessage |$opt_C=$total_proc\n");
-                exit 1;
+                exit $ERRORS{'WARNING'};
         }else{
-                $total_proc=$total_proc."%";
+                $total_proc=$total_proc."%;$warning;$critical;0;";
 		if ($opt_R){
-                        print ($opt_R "Process $returnname CRITICAL: $total_proc $opt_C $returnmessage |$opt_C=$total_proc\n");
-		}else{
-	                print ("Process $returnname CRITICAL: $total_proc $opt_C $returnmessage |$opt_C=$total_proc\n");
+                        print ("$opt_R ");
 		}
-		exit 2;
+	        print ("Process $returnname CRITICAL: $total_proc $opt_C $returnmessage |$opt_C=$total_proc\n");
+		exit $ERRORS{'CRITICAL'};
         }
 }else{
         if ($total_proc < $warning){
-	        $total_proc=$total_proc."KB";
+	        $total_proc=$total_proc."KB;$warning;$critical;0;";
                 print ("Process $returnname OK: $total_proc $opt_C |$opt_C=$total_proc\n");
-                exit 0;
-	}elsif (($total_proc > $warning) && ($total_proc < $critical)){
-	        $total_proc=$total_proc."KB";
+                exit $ERRORS{'OK'};
+	}elsif (($total_proc >= $warning) && ($total_proc < $critical)){
+	        $total_proc=$total_proc."KB;$warning;$critical;0;";
                 print ("Process $returnname WARNING: $total_proc $opt_C $returnmessage |$opt_C=$total_proc\n");
-                exit 1;
+                exit $ERRORS{'WARNING'};
         }else{
-	        $total_proc=$total_proc."KB";
+	        $total_proc=$total_proc."KB;$warning;$critical;0;";
                 if ($opt_R){
-	                print ("$opt_R Process $returnname CRITICAL: $total_proc $opt_C $returnmessage |$opt_C=$total_proc\n");
-		}else{
-                        print ("Process $returnname CRITICAL: $total_proc $opt_C $returnmessage |$opt_C=$total_proc\n");
+	                print ("$opt_R ");
 		}
-                exit 2;
+                print ("Process $returnname CRITICAL: $total_proc $opt_C $returnmessage |$opt_C=$total_proc\n");
+                exit $ERRORS{'CRITICAL'};
         }
 }
 #code should never be able to get this far
 print "Something has gone wrong and the code has reached a place that should not be possible. This should be looked into\n";
-exit 3;
+exit $ERRORS{'UNKNOWN'};
 
