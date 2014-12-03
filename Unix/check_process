@@ -34,6 +34,8 @@ $SIG{'ALRM'} = sub {
 alarm 20;
 ##init();
 
+&usage() if @ARGV == 0;
+
 GetOptions (
         "C|Check=s"             => \$checkType,
         "w|warning=i"        	=> \$opt_w,
