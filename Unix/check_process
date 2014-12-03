@@ -108,12 +108,12 @@ sub usage {
 }
 
 sub average_cpu {
-	my $old_process_cpu;
-        my $current_process_cpu;
-        my $old_system_cpu;
-        my $current_system_cpu;
+	my $old_process_cpu=0;
+        my $current_process_cpu=0;
+        my $old_system_cpu=0;
+        my $current_system_cpu=0;
         my $temp_file = "/tmp/$PID"."_cpu.tmp";
-        my $input;
+        my $input="";
 	my $results;
         my $commandstring;
         if (-e $temp_file){
@@ -122,9 +122,21 @@ sub average_cpu {
                 ($old_system_cpu, $old_process_cpu) = split(" ",$input);
         }
         #next we load the current data
-        $current_system_cpu = `cat /proc/stat |grep \"cpu \" |awk \'{print \$2+\$3+\$4+\$5+\$6+\$7}\'`;
-        chomp($current_system_cpu);
-        $current_process_cpu = `cat /proc/$PID/stat |awk \'{print \$14+\$15+\$16+\$17}\'`;
+	if (-e "/proc/stat"){
+	        $current_system_cpu = `cat /proc/stat |grep \"cpu \" |awk \'{print \$2+\$3+\$4+\$5+\$6+\$7}\'`;
+	        chomp($current_system_cpu);
+	}else{
+                #we cannot find the file so we error and exit
+                print ("CRITICAL:The file /proc/stat should exist but does not.\n");
+                exit $ERRORS{'CRITICAL'};
+	}
+	if (-e "/proc/$PID/stat"){
+	        $current_process_cpu = `cat /proc/$PID/stat |awk \'{print \$14+\$15+\$16+\$17}\'`;
+	}else{
+		#we cannot find the file so we error and exit
+		print ("CRITICAL:The file /proc/$PID/stat should exist but does not. Has process crashed?\n");
+        	exit $ERRORS{'CRITICAL'};
+	}
         chomp($current_process_cpu);
         if (-e $temp_file){
         	#now we dump the old temp file
@@ -154,33 +166,33 @@ sub average_cpu {
 }
 
 sub average_disk_io {
-        my $old_bytes_read;
-        my $current_bytes_read;
-	my $bytes_read;
+        my $old_bytes_read=0;
+        my $current_bytes_read=0;
+	my $bytes_read=0;
 
-        my $old_bytes_written;
-        my $current_bytes_written;
-	my $bytes_written;
+        my $old_bytes_written=0;
+        my $current_bytes_written=0;
+	my $bytes_written=0;
 
-        my $old_read_trans;
-	my $current_read_trans;
-	my $read_trans;
+        my $old_read_trans=0;
+	my $current_read_trans=0;
+	my $read_trans=0;
 
-        my $old_write_trans;
-	my $current_write_trans;
-	my $write_trans;
+        my $old_write_trans=0;
+	my $current_write_trans=0;
+	my $write_trans=0;
 
-        my $old_disk_bytes_read;
-        my $current_disk_bytes_read;
-	my $disk_bytes_read;
+        my $old_disk_bytes_read=0;
+        my $current_disk_bytes_read=0;
+	my $disk_bytes_read=0;
 
-        my $old_disk_bytes_written;
-        my $current_disk_bytes_written;
-	my $disk_bytes_written;
+        my $old_disk_bytes_written=0;
+        my $current_disk_bytes_written=0;
+	my $disk_bytes_written=0;
 
-	my $old_canceled_bytes;
-	my $current_canceled_bytes;
-	my $canceled_bytes;
+	my $old_canceled_bytes=0;
+	my $current_canceled_bytes=0;
+	my $canceled_bytes=0;
 
         my $temp_file = "/tmp/$PID"."_IO.tmp";
         my $old_data;
@@ -206,18 +218,18 @@ sub average_disk_io {
         $current_system_cpu = `cat /proc/stat |grep \"cpu \" |awk \'{print \$2+\$3+\$4+\$5+\$6+\$7}\'`;
         chomp($current_system_cpu);
 	foreach my $line (@PID_list){
-
-	        $input = `cat /proc/$line/io`;
-		($bytes_read, $bytes_written, $read_trans, $write_trans, $disk_bytes_read, $disk_bytes_written, $canceled_bytes) = split("\n",$input);
-		#Next we need to clean up  and sum the data
-	        $current_bytes_read += substr($bytes_read,7);
-	        $current_bytes_written += substr($bytes_written,7);
-		$current_read_trans += substr($read_trans,7);
-		$current_write_trans += substr($write_trans,7);
-	        $current_disk_bytes_read += substr($disk_bytes_read,12);
-	        $current_disk_bytes_written += substr($disk_bytes_written,13);
-		$current_canceled_bytes += substr($canceled_bytes,23);
-		
+		if (-e "/proc/$line/io"){
+		        $input = `cat /proc/$line/io`;
+			($bytes_read, $bytes_written, $read_trans, $write_trans, $disk_bytes_read, $disk_bytes_written, $canceled_bytes) = split("\n",$input);
+			#Next we need to clean up  and sum the data
+		        $current_bytes_read += substr($bytes_read,7);
+		        $current_bytes_written += substr($bytes_written,7);
+			$current_read_trans += substr($read_trans,7);
+			$current_write_trans += substr($write_trans,7);
+		        $current_disk_bytes_read += substr($disk_bytes_read,12);
+		        $current_disk_bytes_written += substr($disk_bytes_written,13);
+			$current_canceled_bytes += substr($canceled_bytes,23);
+		}	
 	}
         if (-e $temp_file){
                 #now we dump the old temp file
@@ -228,7 +240,7 @@ sub average_disk_io {
         $commandstring = ("/bin/echo -n \'$current_system_cpu $current_bytes_read $current_bytes_written $current_read_trans $current_write_trans $current_disk_bytes_read $current_disk_bytes_written $current_canceled_bytes\' \>\> $temp_file");
         system ($commandstring);
         #we check to see if we have data to compare
-        if ($old_bytes_read){
+        if (($old_bytes_read) && ($current_bytes_read)){
 
 		$temp_data = ((($current_bytes_read - $old_bytes_read) / ($current_system_cpu - $old_system_cpu)) *100);
 		$temp_data = sprintf("%.4f",$temp_data);
