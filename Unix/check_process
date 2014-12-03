@@ -5,15 +5,13 @@
 
 #Libraries to use
 use lib "/usr/local/nagios/libexec";
-#use lib "/usr/lib/perl5/5.8.8/";
-#use lib "/usr/lib/perl5/5.8.8/Getopt/";
 
 use utils qw(%ERRORS);
 use warnings;
 use strict;
-use Getopt::Std;
+use Getopt::Long qw(:config no_ignore_case);
 
-use vars qw($opt_a $opt_c $opt_d $opt_p $opt_w $opt_M $opt_N $opt_P $opt_C $opt_h $opt_R);
+use vars qw($opt_a $opt_c $opt_d $opt_p $opt_w $opt_M $opt_N $opt_P $checkType $opt_h $opt_R);
 
 my @external_data;
 my $returnmessage = "";
@@ -24,50 +22,74 @@ my $PID;
 my $returnname="";
 my $total_proc;
 my $processesrunning=0;
+my $multiplecpu;
+my $get_acpu_stats;
+my $get_diskio_stats;
 
+# Make the Nagios devs happy
+$SIG{'ALRM'} = sub {
+	print "Something has gone wrong and the check has timed out. This should be looked into\n";
+	exit $ERRORS{'UNKNOWN'};
+};
+alarm 20;
 ##init();
 
-# Get the options
-if ($#ARGV le 0) {
-	usage();
-} else {
-	getopts('hC:p:a:c:d:w:M:N:P:R:');
-}
+GetOptions (
+        "C|Check=s"             => \$checkType,
+        "w|warning=i"        	=> \$opt_w,
+        "c|critical=i"        	=> \$opt_c,
+        "M|message=s"		=> \$opt_M,
+        "N|name=s"            	=> \$opt_N,
+	"R|startup=s"		=> \$opt_R,
+	"p|processname=s"	=> \$opt_p,
+	"a|argument=s"		=> \$opt_a,
+	"P|PID=s"		=> \$opt_P,
+	"multicpu"		=> \$multiplecpu,
+        "diskio"                => \$get_diskio_stats,
+        "average_cpu"           => \$get_acpu_stats,
+        "h|help"                => sub { usage() },
+);
 
-
-## Display Help
-if ($opt_h){
-	usage();
-}
 sub usage {
 	print "::Process Resource Usage Check Instructions::\n\n";
-	print " -h,		Display this help information\n";
-	print " -C,		Specify a check type: PCPU(%), ICPU(%), ACPU(%), Memory(%), VSZ, RSS, stats\n";
-        print "                  If stats is selected the check will report CPU,Memory, VSZ,RSS and ACPU. It will\n";
-        print "                  only alert ifthe process is not running\n";
-        print "                  PCPU uses the ps command.\n";
-        print "                  ICPU uses top with a 1 second sample rather than using the average from ps.\n";
-        print "                  ACPU uses the files under /proc/ to get the average CPU since the last check run.\n";
-        print "                  Note: The ACPU option only works with a PID file\n";
-        print " -w,		Specify a warning level for the check\n";
-        print "                  The default is 60 percent or 1000000 kilobytes\n";
-        print " -c,		Specify a critical level for the check\n";
+	print " -h|help,	Display this help information\n";
+	print " -C|Check,	Specify a check type: PCPU(%), ICPU(%), ACPU(%), Memory(%), VSZ, RSS,\n";
+	print "			 IO, stats\n";
+        print "			PCPU uses the ps command.\n";
+        print "			ICPU uses top with a 1 second sample rather than using the average from ps.\n";
+        print "			ACPU uses the files under /proc/ to get the average CPU since the last check run.\n";
+	print "			IO uses the files under /proc/ to get the average disk/cache IO since last run.\n";
+        print "			Note: The ACPU and IO options only works with a PID file (see below)\n";
+        print "			stats will report CPU,Memory, VSZ and RSS by default\n";
+        print "			It will only alert if the process is not running\n";
+	print " -diskio,	Add disk IO information to stats check (only if PID file is used)\n";
+        print " -average_cpu,	Add average cpu (ACPU) information to stats check (only if PID file is used)\n"; 
+	print "	***This option is for stats and ACPU only***\n";
+	print " -multicpu,	Use CPU values like that of top and ps rather than true percantages\n";
+	print "			 With this option the max cpu usage is 100% * number of logical cores\n";
+	print "			 Without this option max cpu usage is 100%\n"; 
+	print "	***The following options only work for the CPU and memory checks***\n"; 
+        print " -w|warning,	Specify a warning level for the check\n";
+        print "			 The default is 60 percent or 1000000 kilobytes\n";
+        print " -c|critical,	Specify a critical level for the check\n";
         print "			 The default is 70 percent or 2000000 kilobytes\n";
-        print " -M,		Specify a message to return on failure\n";
-        print " -N,		Specify a differnet name for the process\n";
-        print "                  This is for display in Nagios messages\n";
-        print "                  Example: check_process.sh -p java -N Tomcat\n";
-        print "                  The java process will be monitored and\n";
-        print "                  the Nagios message will read:\n";
-        print "            		The Tomcat process is currently OK.\n";
-	print " -R,            The script to use to restart the process\n";
-	print " 		If selected this will be added the the output on CRITICAL\n";
-        print "                 This is an easy way to pass information to an Event Handler\n";
-        print "		***Only use one of the following***\n";
-        print " -p,		Specify a process name to be monitored\n";
-        print " -a,		Specify a process with the following argument in the\n";
-        print "                  command line to be monitored\n";
-        print " -P,		Specify a PID file containg the PID to be monitored\n\n\n";
+        print " -M|message,	Specify a message to return on failure\n";
+        print " -R|startup,	The script to use to restart the process\n";
+        print "			 If selected this will be added the the output on CRITICAL\n";
+        print "			 This is an easy way to pass information to an Event Handler\n";
+	print "	***Highly reccomended that you use this***\n";
+        print " -N|name,	Specify a differnet name for the process\n";
+        print "			 This is for display in Nagios messages\n";
+        print "			 Example: check_process.sh -p java -N Tomcat\n";
+        print "			 The java process(es) will be monitored and\n";
+        print "			 the Nagios message will read:\n";
+        print "				The Tomcat process is currently OK.\n";
+        print "	***Only use one of the following***\n";
+        print " -p|processname,	Specify a process name to be monitored\n";
+        print " -a|argument,	Specify a process with the following argument in the\n";
+        print "			 command line to be monitored\n";
+        print " -P|PID,		Specify a PID file containg the PID to be monitored\n\n";
+	print "	***Note: Checks by PID file include all children, but not grandchildren***\n\n"; 
         print "Script written by Noah Guttman and Copyright (C) 2011 Noah Guttman.\n";
         print "This script is released and distributed under the terms of the GNU\n";
         print "General Public License.     >>>>    http://www.gnu.org/licenses/\n";
@@ -114,6 +136,11 @@ sub average_cpu {
         if (($old_process_cpu) && ($old_system_cpu)){
         	#now we can calculate the CPU usage
                 $results = ((($current_process_cpu - $old_process_cpu) /($current_system_cpu - $old_system_cpu)) *100);
+		if ($multiplecpu){
+			# we adjust so that full use is 100 * # of cores
+			$multiplecpu = `grep -c "processor" /proc/cpuinfo`;
+			$results = $results * $multiplecpu;
+		}
                 #round for significant digits
                 $results = sprintf("%.4f",$results);
 		return $results;
@@ -124,7 +151,118 @@ sub average_cpu {
 	}
 }
 
+sub average_disk_io {
+        my $old_bytes_read;
+        my $current_bytes_read;
+	my $bytes_read;
 
+        my $old_bytes_written;
+        my $current_bytes_written;
+	my $bytes_written;
+
+        my $old_read_trans;
+	my $current_read_trans;
+	my $read_trans;
+
+        my $old_write_trans;
+	my $current_write_trans;
+	my $write_trans;
+
+        my $old_disk_bytes_read;
+        my $current_disk_bytes_read;
+	my $disk_bytes_read;
+
+        my $old_disk_bytes_written;
+        my $current_disk_bytes_written;
+	my $disk_bytes_written;
+
+	my $old_canceled_bytes;
+	my $current_canceled_bytes;
+	my $canceled_bytes;
+
+        my $temp_file = "/tmp/$PID"."_IO.tmp";
+        my $old_data;
+	my @current_data;
+	my $current_system_cpu;
+	my $old_system_cpu;
+	my $input;
+	my $temp_data;
+        my $results=" ";
+        my $commandstring;
+	my @PID_list;
+	#First we get a list of children
+        foreach my $line (`/bin/ps -eo ppid,pid --no-header |grep -vw grep |grep -vw check_process |grep -w $PID|awk \'{print \$2}\'`){
+		chomp($line);
+                push(@PID_list,$line);
+        }
+        if (-e $temp_file){
+                #Then we load the old data
+                $input = `cat $temp_file`;
+                ($old_system_cpu, $old_bytes_read, $old_bytes_written, $old_read_trans, $old_write_trans, $old_disk_bytes_read, $old_disk_bytes_written, $old_canceled_bytes) = split(" ",$input);
+        }
+        #next we load the current data
+        $current_system_cpu = `cat /proc/stat |grep \"cpu \" |awk \'{print \$2+\$3+\$4+\$5+\$6+\$7}\'`;
+        chomp($current_system_cpu);
+	foreach my $line (@PID_list){
+
+	        $input = `cat /proc/$line/io`;
+		($bytes_read, $bytes_written, $read_trans, $write_trans, $disk_bytes_read, $disk_bytes_written, $canceled_bytes) = split("\n",$input);
+		#Next we need to clean up  and sum the data
+	        $current_bytes_read += substr($bytes_read,7);
+	        $current_bytes_written += substr($bytes_written,7);
+		$current_read_trans += substr($read_trans,7);
+		$current_write_trans += substr($write_trans,7);
+	        $current_disk_bytes_read += substr($disk_bytes_read,12);
+	        $current_disk_bytes_written += substr($disk_bytes_written,13);
+		$current_canceled_bytes += substr($canceled_bytes,23);
+		
+	}
+        if (-e $temp_file){
+                #now we dump the old temp file
+                $commandstring = ("/bin/rm -f $temp_file");
+                system ($commandstring);
+        }
+        # write the new one
+        $commandstring = ("/bin/echo -n \'$current_system_cpu $current_bytes_read $current_bytes_written $current_read_trans $current_write_trans $current_disk_bytes_read $current_disk_bytes_written $current_canceled_bytes\' \>\> $temp_file");
+        system ($commandstring);
+        #we check to see if we have data to compare
+        if ($old_bytes_read){
+
+		$temp_data = ((($current_bytes_read - $old_bytes_read) / ($current_system_cpu - $old_system_cpu)) *100);
+		$temp_data = sprintf("%.4f",$temp_data);
+		$results .= "read_per_second=$temp_data"."B;;;; ";
+
+		$temp_data = ((($current_bytes_written - $old_bytes_written) / ($current_system_cpu - $old_system_cpu)) *100);
+		$temp_data = sprintf("%.4f",$temp_data);
+		$results .= "written_per_second=$temp_data"."B;;;; ";
+
+		$temp_data = ((($current_read_trans - $old_read_trans) / ($current_system_cpu - $old_system_cpu)) *100);
+		$temp_data = sprintf("%.4f",$temp_data);
+		$results .= "reads_per_second=$temp_data;;;; ";
+
+		$temp_data = ((($current_write_trans - $old_write_trans) / ($current_system_cpu - $old_system_cpu)) *100);
+		$temp_data = sprintf("%.4f",$temp_data);
+		$results .= "writes_per_second=$temp_data;;;; ";
+
+		$temp_data = ((($current_disk_bytes_read - $old_disk_bytes_read) / ($current_system_cpu - $old_system_cpu)) *100);
+		$temp_data = sprintf("%.4f",$temp_data);
+		$results .= "reads_per_second_from_disk=$temp_data"."B;;;; ";
+
+		$temp_data = ((($current_disk_bytes_written - $old_disk_bytes_written) / ($current_system_cpu - $old_system_cpu)) *100);
+		$temp_data = sprintf("%.4f",$temp_data);
+		$results .= "written_per_second_to_disk=$temp_data"."B;;;; ";
+
+		$temp_data = ((($current_canceled_bytes - $old_canceled_bytes) / ($current_system_cpu - $old_system_cpu)) *100);
+		$temp_data = sprintf("%.4f",$temp_data);
+		$results .= "canceled_Writes_per_second=$temp_data"."B;;;; ";
+
+                return $results;
+        }else{
+                #There may be no data this run
+                $results = -1;
+                 return $results;
+        }
+}
 
 ##Set custom output if any set
 if ($opt_M){
@@ -134,20 +272,22 @@ if ($opt_M){
 }
 
 ##set which column of the ps to check
-if ($opt_C =~ m\icpu\i){
+if ($checkType =~ m\icpu\i){
         $checktoken="8";
-}elsif ($opt_C =~ m\acpu\i){
+}elsif ($checkType =~ m\acpu\i){
         $checktoken="9";
-}elsif (($opt_C =~ m\pcpu\i) || ($opt_C =~ m\cpu\i)){
+}elsif (($checkType =~ m\pcpu\i) || ($checkType =~ m\cpu\i)){
 	$checktoken=3;
-}elsif ($opt_C =~ m\memory\i){
+}elsif ($checkType =~ m\memory\i){
 	$checktoken=4;
-}elsif ($opt_C =~ m\vsz\i){
+}elsif ($checkType =~ m\vsz\i){
      	$checktoken="5";
-}elsif ($opt_C =~ m\rss\i){
+}elsif ($checkType =~ m\rss\i){
 	$checktoken="6";
-}elsif ($opt_C =~ m\stats\i){
+}elsif ($checkType =~ m\stats\i){
 	$checktoken="7";
+}elsif ($checkType =~ m\io\i){
+	$checktoken="10"
 }else{	
 	print "No valid check type defined.\n\n";
 	usage();
@@ -163,7 +303,7 @@ if (((($checktoken==3)||($checktoken==4))||($checktoken==8)) || ($checktoken==9)
 		$warning = 60;
 		$critical =70;
 	}
-}elsif (($opt_C eq "VSZ")||($opt_C eq "RSS")){
+}elsif (($checkType eq "VSZ")||($checkType eq "RSS")){
 	if ($opt_w && ($opt_c)) {
 		$warning = $opt_w;
 		$critical = $opt_c;
@@ -171,9 +311,6 @@ if (((($checktoken==3)||($checktoken==4))||($checktoken==8)) || ($checktoken==9)
 		$warning = 1000000;
 		$critical =2000000;
 	}	
-}elsif ($checktoken!="7"){
-        print "No valid check type defined.\n\n";
-	usage();
 }
 
 ##Set the return name
@@ -255,11 +392,17 @@ if (($checktoken< 7) &&($checktoken > 2)){
 	my $pmem=0;
 	my $prss=0;
 	my $pvsz=0;
-	my $acpu=0;
+	my $acpu=-1;
+	my $disk_stats=-1;
+
         if ($opt_P){
 		@external_data = (`ps -eo ppid,pid,pcpu,pmem,vsz,rss,cmd --no-header |grep -vw grep |grep -vw check_process_resources |grep " $PID " |awk \'{print \$3" "\$4" " \$5" " \$6}\'`);
-		$acpu = average_cpu();
-
+		if ($get_acpu_stats){
+			$acpu = average_cpu();
+		}
+		if ($get_diskio_stats){
+			$disk_stats = average_disk_io();
+		}
         }elsif ($opt_p){
 		@external_data = (`ps -eo ppid,pid,pcpu,pmem,vsz,rss,comm --no-header |grep -vw grep |grep -vw check_process_resources |grep $opt_p |awk \'{print \$3" "\$4" " \$5" " \$6}\'`);
 
@@ -276,21 +419,38 @@ if (($checktoken< 7) &&($checktoken > 2)){
                 }
 	}
 	$total_proc = "CPU=$pcpu"."%;;;; Memory=$pmem"."%;;;; RSS=$prss"."KB;;;; VSZ=$pvsz"."KB;;;;";
-	if ($acpu){
-		if ($acpu != -1){
+	if ($get_acpu_stats){
+		if ($acpu !~ /-1/){
 			$total_proc .= " ACPU=$acpu"."%;;;;"
 		}
 	}
+        if ($get_diskio_stats){
+                if ($disk_stats !~ /-1/){
+                        $total_proc .= " $disk_stats"
+                }
+        }
+
 }elsif ($checktoken == 9){
 	unless ($opt_P){
 		print "You must specify a .pid file with ACPU.\n";
 		usage();
 	}
 	$total_proc=average_cpu();
-	if ($total_proc == -1){
+	if ($total_proc =~ /-1/){
 		print "First time running check, or process has restarted since last check. Data will be available on next run.\n";
                 exit $ERRORS{'OK'};
 	}
+}elsif ($checktoken == 10){
+        unless ($opt_P){
+                print "You must specify a .pid file with the IO check.\n";
+                usage();
+        }
+        $total_proc=average_disk_io();
+        if ($total_proc =~ /-1/){
+                print "First time running check, or process has restarted since last check. Data will be available on next run.\n";
+                exit $ERRORS{'OK'};
+        }
+
 }else{
 	print "There is an error with your check's syntax.\n\n";
 	usage();
@@ -298,42 +458,42 @@ if (($checktoken< 7) &&($checktoken > 2)){
 
 
 ## Check if we need to alaert and return the results
-if ($checktoken == 7){
+if (($checktoken == 7) || ($checktoken == 10)){
 	#we already verified that the process was running
 	print ("OK:Process $returnname is running| $total_proc\n");
 	exit $ERRORS{'OK'};
 }elsif (((($checktoken==3) || ($checktoken==4)) || ($checktoken==8)) || ($checktoken==9)){
         if ($total_proc < $warning){
 	        $total_proc=$total_proc."%";
-                print ("Process $returnname OK: $total_proc $opt_C |$opt_C=$total_proc;$warning;$critical;0;\n");
+                print ("Process $returnname OK: $total_proc $checkType |$checkType=$total_proc;$warning;$critical;0;\n");
                 exit $ERRORS{'OK'};
 	}elsif (($total_proc >= $warning) && ($total_proc < $critical)){
 	        $total_proc=$total_proc."%";
-                print ("Process $returnname WARNING: $total_proc $opt_C $returnmessage |$opt_C=$total_proc;$warning;$critical;0;\n");
+                print ("Process $returnname WARNING: $total_proc $checkType $returnmessage |$checkType=$total_proc;$warning;$critical;0;\n");
                 exit $ERRORS{'WARNING'};
         }else{
                 $total_proc=$total_proc."%";
 		if ($opt_R){
                         print ("$opt_R ");
 		}
-	        print ("Process $returnname CRITICAL: $total_proc $opt_C $returnmessage |$opt_C=$total_proc;$warning;$critical;0;\n");
+	        print ("Process $returnname CRITICAL: $total_proc $checkType $returnmessage |$checkType=$total_proc;$warning;$critical;0;\n");
 		exit $ERRORS{'CRITICAL'};
         }
 }else{
         if ($total_proc < $warning){
 	        $total_proc=$total_proc."KB";
-                print ("Process $returnname OK: $total_proc $opt_C |$opt_C=$total_proc;$warning;$critical;0;\n");
+                print ("Process $returnname OK: $total_proc $checkType |$checkType=$total_proc;$warning;$critical;0;\n");
                 exit $ERRORS{'OK'};
 	}elsif (($total_proc >= $warning) && ($total_proc < $critical)){
 	        $total_proc=$total_proc."KB";
-                print ("Process $returnname WARNING: $total_proc $opt_C $returnmessage |$opt_C=$total_proc;$warning;$critical;0;\n");
+                print ("Process $returnname WARNING: $total_proc $checkType $returnmessage |$checkType=$total_proc;$warning;$critical;0;\n");
                 exit $ERRORS{'WARNING'};
         }else{
 	        $total_proc=$total_proc."KB";
                 if ($opt_R){
 	                print ("$opt_R ");
 		}
-                print ("Process $returnname CRITICAL: $total_proc $opt_C $returnmessage |$opt_C=$total_proc;$warning;$critical;0;\n");
+                print ("Process $returnname CRITICAL: $total_proc $checkType $returnmessage |$checkType=$total_proc;$warning;$critical;0;\n");
                 exit $ERRORS{'CRITICAL'};
         }
 }
