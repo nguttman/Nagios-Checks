@@ -243,11 +243,11 @@ sub average_disk_io {
         if (($old_bytes_read) && ($current_bytes_read)){
 
 		$temp_data = ((($current_bytes_read - $old_bytes_read) / ($current_system_cpu - $old_system_cpu)) *100);
-		$temp_data = sprintf("%.4f",$temp_data);
+		$temp_data = sprintf("%.0f",$temp_data);
 		$results .= "read_per_second=$temp_data"."B;;;; ";
 
 		$temp_data = ((($current_bytes_written - $old_bytes_written) / ($current_system_cpu - $old_system_cpu)) *100);
-		$temp_data = sprintf("%.4f",$temp_data);
+		$temp_data = sprintf("%.0f",$temp_data);
 		$results .= "written_per_second=$temp_data"."B;;;; ";
 
 		$temp_data = ((($current_read_trans - $old_read_trans) / ($current_system_cpu - $old_system_cpu)) *100);
@@ -259,15 +259,15 @@ sub average_disk_io {
 		$results .= "writes_per_second=$temp_data;;;; ";
 
 		$temp_data = ((($current_disk_bytes_read - $old_disk_bytes_read) / ($current_system_cpu - $old_system_cpu)) *100);
-		$temp_data = sprintf("%.4f",$temp_data);
+		$temp_data = sprintf("%.0f",$temp_data);
 		$results .= "reads_per_second_from_disk=$temp_data"."B;;;; ";
 
 		$temp_data = ((($current_disk_bytes_written - $old_disk_bytes_written) / ($current_system_cpu - $old_system_cpu)) *100);
-		$temp_data = sprintf("%.4f",$temp_data);
+		$temp_data = sprintf("%.0f",$temp_data);
 		$results .= "written_per_second_to_disk=$temp_data"."B;;;; ";
 
 		$temp_data = ((($current_canceled_bytes - $old_canceled_bytes) / ($current_system_cpu - $old_system_cpu)) *100);
-		$temp_data = sprintf("%.4f",$temp_data);
+		$temp_data = sprintf("%.0f",$temp_data);
 		$results .= "canceled_Writes_per_second=$temp_data"."B;;;; ";
 
                 return $results;
