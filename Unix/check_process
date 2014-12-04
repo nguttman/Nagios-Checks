@@ -13,6 +13,7 @@ use Getopt::Long qw(:config no_ignore_case);
 
 use vars qw($opt_a $opt_c $opt_d $opt_p $opt_w $opt_M $opt_N $opt_P $checkType $opt_h $opt_R);
 
+$checkType ="";
 my @external_data;
 my $returnmessage = "";
 my $checktoken;
