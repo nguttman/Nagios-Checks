@@ -25,6 +25,7 @@ my $processesrunning=0;
 my $multiplecpu;
 my $get_acpu_stats;
 my $get_diskio_stats;
+my $no_children;
 
 # Make the Nagios devs happy
 $SIG{'ALRM'} = sub {
@@ -49,6 +50,7 @@ GetOptions (
 	"multicpu"		=> \$multiplecpu,
         "diskio"                => \$get_diskio_stats,
         "average_cpu"           => \$get_acpu_stats,
+	"nochildren"		=> \$no_children,
         "h|help"                => sub { usage() },
 );
 
@@ -64,9 +66,11 @@ sub usage {
         print "			Note: The ACPU and IO options only works with a PID file (see below)\n";
         print "			stats will report CPU,Memory, VSZ and RSS by default\n";
         print "			It will only alert if the process is not running\n";
+	print "	***These options only work is you are checking via a .pid file***\n";
+	print " -nochildren	Do not include children in the data collected.  (only if PID file is used)\n";	
 	print " -diskio,	Add disk IO information to stats check (only if PID file is used)\n";
         print " -average_cpu,	Add average cpu (ACPU) information to stats check (only if PID file is used)\n"; 
-	print "	***This option is for stats and ACPU only***\n";
+	print "	***These options are for the stats and ACPU checks only***\n";
 	print " -multicpu,	Use CPU values like that of top and ps rather than true percantages\n";
 	print "			 With this option the max cpu usage is 100% * number of logical cores\n";
 	print "			 Without this option max cpu usage is 100%\n"; 
@@ -104,7 +108,7 @@ sub usage {
         print "MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n";
         print "GNU General Public License for more details.\n";
         print ">>>>    http://www.gnu.org/licenses/\n";
-        exit $ERRORS{'OK'}; 
+        exit $ERRORS{'UNKNOWN'}; 
 }
 
 sub average_cpu {
@@ -143,11 +147,19 @@ sub average_cpu {
 	}
 	if (-e "/proc/$PID/stat"){
 		if (-r "/proc/$PID/stat"){
-	        	$current_process_cpu = `cat /proc/$PID/stat |awk \'{print \$14+\$15+\$16+\$17}\'`;
+			if ($no_children){
+	        		$current_process_cpu = `cat /proc/$PID/stat |awk \'{print \$14+\$15}\'`;
+			}else{
+				$current_process_cpu = `cat /proc/$PID/stat |awk \'{print \$14+\$15+\$16+\$17}\'`;
+			}
 		}else{
 			my $sudo_rights = `sudo -l |grep NOPASSWD`;
 			if (($sudo_rights =~ m\cat\) || ($sudo_rights =~ m\all\i)){
-				$current_process_cpu = `sudo cat /proc/$PID/stat |awk \'{print \$14+\$15+\$16+\$17}\'`;
+				if ($no_children){
+					$current_process_cpu = `sudo cat /proc/$PID/stat |awk \'{print \$14+\$15}\'`;
+				}else{
+					$current_process_cpu = `sudo cat /proc/$PID/stat |awk \'{print \$14+\$15+\$16+\$17}\'`;
+				}
 			}else{
 				print ("CRITICAL:The file /proc/$PID/stat exists but it cannot be read. Please grant nagios sudo NOPASSWD rights to the cat utility. You may also need to disable the requiretty option.\n");
 				exit $ERRORS{'CRITICAL'};
@@ -226,10 +238,14 @@ sub average_disk_io {
         my $commandstring;
 	my @PID_list;
 	#First we get a list of children
-        foreach my $line (`/bin/ps -eo ppid,pid --no-header |grep -vw grep |grep -vw check_process |grep -w $PID|awk \'{print \$2}\'`){
-		chomp($line);
-                push(@PID_list,$line);
-        }
+	if ($no_children){
+		push(@PID_list, $PID);
+	}else{
+	        foreach my $line (`/bin/ps -eo ppid,pid --no-header |grep -vw grep |grep -vw check_process |grep -w $PID|awk \'{print \$2}\'`){
+			chomp($line);
+	                push(@PID_list,$line);
+	        }
+	}
         if (-r $temp_file){
                 #Then we load the old data
                 $input = `cat $temp_file`;
@@ -413,7 +429,7 @@ if ($processesrunning < 1) {
 	if ($opt_R){
                 print ("$opt_R ");
 	}
-	        print ("CRITICAL:The $returnname process doesn't appear to be running. $returnmessage\n");
+	print ("CRITICAL:The $returnname process doesn't appear to be running. $returnmessage\n");
 	exit $ERRORS{'CRITICAL'};
 }
 
@@ -422,7 +438,11 @@ if ($processesrunning < 1) {
 #Checking the actual stats
 if (($checktoken< 7) &&($checktoken > 2)){
 	if ($opt_P){
-		@external_data = (`ps -eo ppid,pid,pcpu,pmem,vsz,rss,cmd --no-header |grep -vw grep |grep -vw check_process |grep -w $PID |awk \'{print \$$checktoken}\'`);
+		if ($no_children){
+			@external_data = (`ps -eo pid,pid,pcpu,pmem,vsz,rss,cmd --no-header |grep -vw grep |grep -vw check_process |grep -w $PID |awk \'{print \$$checktoken}\'`);
+		}else{
+			@external_data = (`ps -eo ppid,pid,pcpu,pmem,vsz,rss,cmd --no-header |grep -vw grep |grep -vw check_process |grep -w $PID |awk \'{print \$$checktoken}\'`);
+		}
 	}elsif ($opt_p){
 		@external_data = (`ps -eo ppid,pid,pcpu,pmem,vsz,rss,comm --no-header |grep -vw grep |grep -vw check_process |grep $opt_p |awk \'{print \$$checktoken}\'`);
 	}elsif ($opt_a){
@@ -435,12 +455,16 @@ if (($checktoken< 7) &&($checktoken > 2)){
 	}
 }elsif ($checktoken == 8){
         if ($opt_P){
-		my $top_list="";
-		foreach my $line (`/bin/ps -eo ppid,pid --no-header |grep -vw grep |grep -vw check_process |grep -w $PID|awk \'{print \$2}\'`){
-			chomp($line);
-			$top_list .="-p $line ";
+		if ($no_children){
+			@external_data = (`top -b -n 1 -p $PID |awk \'{print \$9}\'`);
+		}else{
+			my $top_list="";
+			foreach my $line (`/bin/ps -eo ppid,pid --no-header |grep -vw grep |grep -vw check_process |grep -w $PID|awk \'{print \$2}\'`){
+				chomp($line);
+				$top_list .="-p $line ";
+			}
+			@external_data = (`top -b -n 1 $top_list |awk \'{print \$9}\'`);
 		}
-		@external_data = (`top -b -n 1 $top_list |awk \'{print \$9}\'`);
         }elsif ($opt_p){
 		@external_data = (`top -b -n 1|grep -vw grep |grep -vw check_process |grep $opt_p |awk \'{print \$9}\'`);
         }elsif ($opt_a){
@@ -464,7 +488,11 @@ if (($checktoken< 7) &&($checktoken > 2)){
 	my $disk_stats=-1;
 
         if ($opt_P){
-		@external_data = (`ps -eo ppid,pid,pcpu,pmem,vsz,rss,cmd --no-header |grep -vw grep |grep -vw check_process_resources |grep " $PID " |awk \'{print \$3" "\$4" " \$5" " \$6}\'`);
+		if ($no_children){
+			@external_data = (`ps -eo pid,pid,pcpu,pmem,vsz,rss,cmd --no-header |grep -vw grep |grep -vw check_process_resources |grep " $PID " |awk \'{print \$3" "\$4" " \$5" " \$6}\'`);
+		}else{
+			@external_data = (`ps -eo ppid,pid,pcpu,pmem,vsz,rss,cmd --no-header |grep -vw grep |grep -vw check_process_resources |grep " $PID " |awk \'{print \$3" "\$4" " \$5" " \$6}\'`);
+		}
 		if ($get_acpu_stats){
 			$acpu = average_cpu();
 		}
