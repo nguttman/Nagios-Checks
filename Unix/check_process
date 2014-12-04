@@ -116,22 +116,43 @@ sub average_cpu {
         my $input="";
 	my $results;
         my $commandstring;
-        if (-e $temp_file){
+        if (-r $temp_file){
 		#First we load the old data
                 $input = `cat $temp_file`;
                 ($old_system_cpu, $old_process_cpu) = split(" ",$input);
         }
         #next we load the current data
 	if (-e "/proc/stat"){
-	        $current_system_cpu = `cat /proc/stat |grep \"cpu \" |awk \'{print \$2+\$3+\$4+\$5+\$6+\$7}\'`;
-	        chomp($current_system_cpu);
+		if (-r "/proc/stat"){
+		        $current_system_cpu = `cat /proc/stat |grep \"cpu \" |awk \'{print \$2+\$3+\$4+\$5+\$6+\$7}\'`;
+		        chomp($current_system_cpu);
+		}else{
+			my $sudo_rights = `sudo -l |grep NOPASSWD`;
+			if (($sudo_rights =~ m\cat\) || ($sudo_rights =~ m\all\i)){
+				$current_system_cpu = `sudo cat /proc/stat |grep \"cpu \" |awk \'{print \$2+\$3+\$4+\$5+\$6+\$7}\'`;
+                        	chomp($current_system_cpu);
+			}else{
+				print ("CRITICAL:The file /proc/stat exists but it cannot be read. Please grant nagios sudo NOPASSWD rights to the cat utility. You may also need to disable the requiretty option.\n");
+                		exit $ERRORS{'CRITICAL'};
+			}
+		}
 	}else{
                 #we cannot find the file so we error and exit
                 print ("CRITICAL:The file /proc/stat should exist but does not.\n");
                 exit $ERRORS{'CRITICAL'};
 	}
 	if (-e "/proc/$PID/stat"){
-	        $current_process_cpu = `cat /proc/$PID/stat |awk \'{print \$14+\$15+\$16+\$17}\'`;
+		if (-r "/proc/$PID/stat"){
+	        	$current_process_cpu = `cat /proc/$PID/stat |awk \'{print \$14+\$15+\$16+\$17}\'`;
+		}else{
+			my $sudo_rights = `sudo -l |grep NOPASSWD`;
+			if (($sudo_rights =~ m\cat\) || ($sudo_rights =~ m\all\i)){
+				$current_process_cpu = `sudo cat /proc/$PID/stat |awk \'{print \$14+\$15+\$16+\$17}\'`;
+			}else{
+				print ("CRITICAL:The file /proc/$PID/stat exists but it cannot be read. Please grant nagios sudo NOPASSWD rights to the cat utility. You may also need to disable the requiretty option.\n");
+				exit $ERRORS{'CRITICAL'};
+			}
+		}
 	}else{
 		#we cannot find the file so we error and exit
 		print ("CRITICAL:The file /proc/$PID/stat should exist but does not. Has process crashed?\n");
@@ -209,16 +230,33 @@ sub average_disk_io {
 		chomp($line);
                 push(@PID_list,$line);
         }
-        if (-e $temp_file){
+        if (-r $temp_file){
                 #Then we load the old data
                 $input = `cat $temp_file`;
                 ($old_system_cpu, $old_bytes_read, $old_bytes_written, $old_read_trans, $old_write_trans, $old_disk_bytes_read, $old_disk_bytes_written, $old_canceled_bytes) = split(" ",$input);
         }
         #next we load the current data
-        $current_system_cpu = `cat /proc/stat |grep \"cpu \" |awk \'{print \$2+\$3+\$4+\$5+\$6+\$7}\'`;
-        chomp($current_system_cpu);
+	if (-e "/proc/stat"){
+		if (-r "/proc/stat"){
+        		$current_system_cpu = `cat /proc/stat |grep \"cpu \" |awk \'{print \$2+\$3+\$4+\$5+\$6+\$7}\'`;
+        		chomp($current_system_cpu);
+		}else{
+			my $sudo_rights = `sudo -l |grep NOPASSWD`;
+                        if (($sudo_rights =~ m\cat\) || ($sudo_rights =~ m\all\i)){
+                                $current_system_cpu = `sudo cat /proc/stat |grep \"cpu \" |awk \'{print \$2+\$3+\$4+\$5+\$6+\$7}\'`;
+                                chomp($current_system_cpu);
+                        }else{
+                                print ("CRITICAL:The file /proc/stat exists but it cannot be read. Please grant nagios sudo NOPASSWD rights to the cat utility. You may also need to disable the requiretty option.\n");
+                                exit $ERRORS{'CRITICAL'};
+                        }
+		}
+	}else{
+                #we cannot find the file so we error and exit
+                print ("CRITICAL:The file /proc/stat should exist but does not.\n");
+                exit $ERRORS{'CRITICAL'};
+        }
 	foreach my $line (@PID_list){
-		if (-e "/proc/$line/io"){
+		if (-r "/proc/$line/io"){
 		        $input = `cat /proc/$line/io`;
 			($bytes_read, $bytes_written, $read_trans, $write_trans, $disk_bytes_read, $disk_bytes_written, $canceled_bytes) = split("\n",$input);
 			#Next we need to clean up  and sum the data
@@ -229,7 +267,23 @@ sub average_disk_io {
 		        $current_disk_bytes_read += substr($disk_bytes_read,12);
 		        $current_disk_bytes_written += substr($disk_bytes_written,13);
 			$current_canceled_bytes += substr($canceled_bytes,23);
-		}	
+		}elsif (-e "/proc/$line/io"){
+			my $sudo_rights = `sudo -l |grep NOPASSWD`;
+			if (($sudo_rights =~ m\cat\) || ($sudo_rights =~ m\all\i)){
+				$input = `sudo cat /proc/$line/io`;
+                        	#Next we need to clean up  and sum the data
+                        	$current_bytes_read += substr($bytes_read,7);
+                        	$current_bytes_written += substr($bytes_written,7);
+                        	$current_read_trans += substr($read_trans,7);
+                        	$current_write_trans += substr($write_trans,7);
+                        	$current_disk_bytes_read += substr($disk_bytes_read,12);
+                        	$current_disk_bytes_written += substr($disk_bytes_written,13);
+                        	$current_canceled_bytes += substr($canceled_bytes,23);
+			}else{
+				print ("CRITICAL:The file /proc/$line/io exists but it cannot be read. Please grant nagios sudo NOPASSWD rights to the cat utility. You may also need to disable the requiretty option.\n");
+                                exit $ERRORS{'CRITICAL'};
+			}
+		}
 	}
         if (-e $temp_file){
                 #now we dump the old temp file
@@ -340,7 +394,7 @@ if ($opt_N){
 
 ##Check to see if the process is running
 if ($opt_P){
-        if (-e $opt_P){
+        if (-r $opt_P){
 		$PID = (`cat $opt_P`);
 		chomp($PID);
 		$processesrunning=(`ps -eo pid,ppid |grep -vw grep |grep -vw check_process_resources |grep -cw $PID`);
