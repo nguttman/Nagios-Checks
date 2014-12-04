@@ -91,7 +91,7 @@ sub usage {
 	print "	***Highly reccomended that you use this***\n";
         print " -N|name,	Specify a differnet name for the process\n";
         print "			 This is for display in Nagios messages\n";
-        print "			 Example: check_process.sh -P /var/run/mysqld.pid -N MasterDB\n";
+        print "			 Example: check_process -P /var/run/mysqld.pid -N MasterDB\n";
         print "			 The mysqld process will be monitored and the Nagios message will read:\n";
         print "				The MasterDB process is currently OK.\n";
         print "	***Only use one of the following***\n";
