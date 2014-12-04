@@ -34,7 +34,11 @@ $SIG{'ALRM'} = sub {
 };
 alarm 20;
 ##init();
-
+my $sudo_rights = `sudo -l |grep NOPASSWD`;
+my $can_sudo=0;
+if (($sudo_rights =~ m\cat\) || ($sudo_rights =~ m\all\i)){
+	$can_sudo=1;
+}
 &usage() if @ARGV == 0;
 
 GetOptions (
@@ -130,8 +134,7 @@ sub average_cpu {
 		        $current_system_cpu = `cat /proc/stat |grep \"cpu \" |awk \'{print \$2+\$3+\$4+\$5+\$6+\$7}\'`;
 		        chomp($current_system_cpu);
 		}else{
-			my $sudo_rights = `sudo -l |grep NOPASSWD`;
-			if (($sudo_rights =~ m\cat\) || ($sudo_rights =~ m\all\i)){
+			if ($can_sudo){
 				$current_system_cpu = `sudo cat /proc/stat |grep \"cpu \" |awk \'{print \$2+\$3+\$4+\$5+\$6+\$7}\'`;
                         	chomp($current_system_cpu);
 			}else{
@@ -152,8 +155,7 @@ sub average_cpu {
 				$current_process_cpu = `cat /proc/$PID/stat |awk \'{print \$14+\$15+\$16+\$17}\'`;
 			}
 		}else{
-			my $sudo_rights = `sudo -l |grep NOPASSWD`;
-			if (($sudo_rights =~ m\cat\) || ($sudo_rights =~ m\all\i)){
+			if ($can_sudo){
 				if ($no_children){
 					$current_process_cpu = `sudo cat /proc/$PID/stat |awk \'{print \$14+\$15}\'`;
 				}else{
@@ -256,8 +258,7 @@ sub average_disk_io {
         		$current_system_cpu = `cat /proc/stat |grep \"cpu \" |awk \'{print \$2+\$3+\$4+\$5+\$6+\$7}\'`;
         		chomp($current_system_cpu);
 		}else{
-			my $sudo_rights = `sudo -l |grep NOPASSWD`;
-                        if (($sudo_rights =~ m\cat\) || ($sudo_rights =~ m\all\i)){
+                        if ($can_sudo){
                                 $current_system_cpu = `sudo cat /proc/stat |grep \"cpu \" |awk \'{print \$2+\$3+\$4+\$5+\$6+\$7}\'`;
                                 chomp($current_system_cpu);
                         }else{
@@ -283,8 +284,7 @@ sub average_disk_io {
 		        $current_disk_bytes_written += substr($disk_bytes_written,13);
 			$current_canceled_bytes += substr($canceled_bytes,23);
 		}elsif (-e "/proc/$line/io"){
-			my $sudo_rights = `sudo -l |grep NOPASSWD`;
-			if (($sudo_rights =~ m\cat\) || ($sudo_rights =~ m\all\i)){
+			if ($can_sudo){
 				$input = `sudo cat /proc/$line/io`;
                         	#Next we need to clean up  and sum the data
                         	$current_bytes_read += substr($bytes_read,7);
