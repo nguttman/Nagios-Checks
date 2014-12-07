@@ -33,7 +33,7 @@ $SIG{'ALRM'} = sub {
 	print "Something has gone wrong and the check has timed out. This should be looked into\n";
 	exit $ERRORS{'UNKNOWN'};
 };
-alarm 20;
+#alarm 20;
 ##init();
 my $sudo_rights = `sudo -l |grep NOPASSWD`;
 my $can_sudo=0;
@@ -124,6 +124,7 @@ sub average_cpu {
         my $input="";
 	my $results;
         my $commandstring;
+	my @PID_list;
         if (-r $temp_file){
 		#First we load the old data
                 $input = `cat $temp_file`;
@@ -148,29 +149,31 @@ sub average_cpu {
                 print ("CRITICAL:The file /proc/stat should exist but does not.\n");
                 exit $ERRORS{'CRITICAL'};
 	}
-	if (-e "/proc/$PID/stat"){
-		if (-r "/proc/$PID/stat"){
-			if ($no_children){
-	        		$current_process_cpu = `cat /proc/$PID/stat |awk \'{print \$14+\$15}\'`;
+	if ($no_children){
+                push(@PID_list, $PID);
+        }else{
+                foreach my $line (`/bin/ps -eo ppid,pid --no-header |grep -vw grep |grep -vw check_process |grep -w $PID|awk \'{print \$2}\'`){
+                        chomp($line);
+                        push(@PID_list,$line);
+                }
+        }
+	foreach my $child_PID (@PID_list){
+		if (-e "/proc/$child_PID/stat"){
+			if (-r "/proc/$child_PID/stat"){
+				$current_process_cpu += `cat /proc/$child_PID/stat |awk \'{print \$14+\$15+\$16+\$17}\'`;
 			}else{
-				$current_process_cpu = `cat /proc/$PID/stat |awk \'{print \$14+\$15+\$16+\$17}\'`;
+				if ($can_sudo){
+					$current_process_cpu += `sudo cat /proc/$child_PID/stat |awk \'{print \$14+\$15+\$16+\$17}\'`;
+				}else{
+					print ("CRITICAL:The file /proc/$child_PID/stat exists but it cannot be read. Please grant nagios sudo NOPASSWD rights to the cat utility. You may also need to disable the requiretty option.\n");
+					exit $ERRORS{'CRITICAL'};
+				}
 			}
 		}else{
-			if ($can_sudo){
-				if ($no_children){
-					$current_process_cpu = `sudo cat /proc/$PID/stat |awk \'{print \$14+\$15}\'`;
-				}else{
-					$current_process_cpu = `sudo cat /proc/$PID/stat |awk \'{print \$14+\$15+\$16+\$17}\'`;
-				}
-			}else{
-				print ("CRITICAL:The file /proc/$PID/stat exists but it cannot be read. Please grant nagios sudo NOPASSWD rights to the cat utility. You may also need to disable the requiretty option.\n");
-				exit $ERRORS{'CRITICAL'};
-			}
+			#we cannot find the file so we error and exit
+			print ("CRITICAL:The file /proc/$child_PID/stat should exist but does not. Has process crashed?\n");
+        		exit $ERRORS{'CRITICAL'};
 		}
-	}else{
-		#we cannot find the file so we error and exit
-		print ("CRITICAL:The file /proc/$PID/stat should exist but does not. Has process crashed?\n");
-        	exit $ERRORS{'CRITICAL'};
 	}
         chomp($current_process_cpu);
         if (-e $temp_file){
@@ -464,6 +467,10 @@ if (($checktoken< 7) &&($checktoken > 2)){
 				$top_list .="-p $line ";
 			}
 			@external_data = (`top -b -n 1 $top_list |awk \'{print \$9}\'`);
+			if (scalar(@external_data) == 0){
+        				print ("UNKNOWN: top retunred no data. It may not be able to handle that many PIDs\n");
+        				exit $ERRORS{'UNKNOWN'};
+			}
 		}
         }elsif ($opt_p){
 		@external_data = (`top -b -n 1|grep -vw grep |grep -vw check_process |grep $opt_p |awk \'{print \$9}\'`);
