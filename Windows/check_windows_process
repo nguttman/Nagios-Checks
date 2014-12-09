@@ -1,0 +1,555 @@
+#!/usr/bin/perl
+
+
+## Script written by Noah Guttman and Copyright (C) 2014 Noah Guttman. This script is released and distributed under the terms of the GNU General Public License
+
+#Libraries to use
+use lib "/usr/local/nagios/libexec";
+
+use utils qw(%ERRORS);
+use warnings;
+use strict;
+use Getopt::Long qw(:config no_ignore_case);
+
+use vars qw($username $password $opt_p $opt_M $opt_N $checkType $opt_R);
+
+
+$checkType ="";
+my @external_data;
+my $returnmessage = "";
+my $warning;
+my $critical;
+my $returnname="";
+my $multiplecpu;
+my $get_memory_stats;
+my $get_diskio_stats;
+my $get_threads_stats;
+my $host;
+my $sample_time =5;
+
+my $is_running=0;
+my $perfomance ="|";
+my $data_to_check=0;
+my $alarmtime =10;
+
+# Make the Nagios devs happy
+$SIG{'ALRM'} = sub {
+	print "Something has gone wrong and the check has timed out. This should be looked into\n";
+	exit $ERRORS{'UNKNOWN'};
+};
+##init();
+&usage() if @ARGV == 0;
+
+GetOptions (
+	"U|username=s"		=> \$username,
+        "P|password=s"          => \$password,
+	"H|host=s"		=> \$host,
+	"S|sampletime=i"	=> \$sample_time,
+	"memorystats"		=> \$get_memory_stats,
+	"iostats"		=> \$get_diskio_stats,
+	"threads"		=> \$get_threads_stats,
+	"multicpu"		=> \$multiplecpu,
+        "C|Check=s"             => \$checkType,
+        "w|warning=i"        	=> \$warning,
+        "c|critical=i"        	=> \$critical,
+        "M|message=s"		=> \$opt_M,
+        "N|name=s"            	=> \$opt_N,
+	"R|startup=s"		=> \$opt_R,
+	"p|processname=s"	=> \$opt_p,
+        "h|help"                => sub { usage() },
+);
+$alarmtime += $sample_time;
+alarm($alarmtime);
+if ($checkType !~ m\STATS\i){
+	unless (($warning) && ($critical)){
+        	print "There is an error with your check's syntax. You must declare a warning and critical levels.\n\n";
+	        usage();
+	}
+}
+
+unless ($opt_N){
+	$opt_N = $opt_p;
+}
+
+##Set custom output if any set
+if ($opt_M){
+        $returnmessage=$opt_M;
+}else{
+        $returnmessage="";
+}
+if ($checkType =~ m\ACPU\i){
+	($data_to_check, $perfomance, $is_running) = average_cpu();
+}elsif ($checkType =~ m\ICPU\i){
+	($data_to_check, $perfomance, $is_running) = instant_cpu();
+}elsif ($checkType =~ m\IO\i){
+        ($data_to_check, $perfomance, $is_running) = average_disk_io();
+}elsif ($checkType =~ m\MEMORY\i){
+        ($data_to_check, $perfomance, $is_running) = memory_usage();
+}elsif ($checkType =~ m\THREADS\i){
+        ($data_to_check, $perfomance, $is_running) = threads_usage();
+}elsif ($checkType =~ m\STATS\i){
+	my $temp_perfomance="";
+	my $temp_data_to_check="";
+	my $temp_is_running=0;
+	($temp_data_to_check, $temp_perfomance, $temp_is_running) = average_cpu();
+	$is_running = $temp_is_running;
+	if ($is_running != 0){
+		# it was runnign when we started we do not bother to check again this run
+		$perfomance .= $temp_perfomance;
+		$temp_perfomance ="";
+		($temp_data_to_check, $temp_perfomance, $temp_is_running) = average_disk_io();
+		$perfomance .= $temp_perfomance;
+		$temp_perfomance ="";
+		($temp_data_to_check, $temp_perfomance, $temp_is_running) = memory_usage();
+                $perfomance .= $temp_perfomance;
+                $temp_perfomance ="";
+                ($temp_data_to_check, $temp_perfomance, $temp_is_running) = threads_usage();
+                $perfomance .= $temp_perfomance;
+		print ("OK:Process $opt_N is running $is_running instances.$perfomance\n");
+        	exit $ERRORS{'OK'};
+	}else{
+		#process is not running
+		if ($opt_R){
+			print "$opt_R ";
+		}
+        	print ("CRITICAL:The $returnname process doesn't appear to be running. $returnmessage\n");
+        	exit $ERRORS{'CRITICAL'};
+	}
+}else{
+        print "There is an error with your check's syntax.\n\n";
+        usage();
+}
+#print "***$data_to_check***$perfomance***$is_running***\n";
+if ((($get_memory_stats) && ($checkType !~ m\MEMORY\i)) && ($checkType !~ m\STATS\i)) {
+        my $temp_perfomance="";
+        my $temp_data_to_check="";
+        my $temp_is_running=0;
+	($temp_data_to_check, $temp_perfomance, $temp_is_running) = memory_usage();
+        $perfomance .= $temp_perfomance;
+}
+if ((($get_diskio_stats) && ($checkType !~ m\IO\i)) && ($checkType !~ m\STATS\i)){
+        my $temp_perfomance="";
+        my $temp_data_to_check="";
+        my $temp_is_running=0;
+        ($temp_data_to_check, $temp_perfomance, $temp_is_running) = average_disk_io();
+        $perfomance .= $temp_perfomance;
+}
+if ((($get_threads_stats) && ($checkType !~ m\THREADS\i)) && ($checkType !~ m\STATS\i)){
+        my $temp_perfomance="";
+        my $temp_data_to_check="";
+        my $temp_is_running=0;
+        ($temp_data_to_check, $temp_perfomance, $temp_is_running) = threads_usage();
+        $perfomance .= $temp_perfomance;
+}
+
+#Now we check whatever data we have.
+if ($is_running == 0){
+        #process is not running
+        if ($opt_R){
+               print "$opt_R ";
+        }
+        print ("CRITICAL:The $returnname process doesn't appear to be running. $returnmessage\n");
+	exit $ERRORS{'CRITICAL'};
+}elsif ($data_to_check == -1){
+	print ("UNKNOWN:The $returnname process does not have data avaialble yet. It should be availabale on next run.\n");
+        exit $ERRORS{'UNKNOWN'};
+}else{
+	my $status_string="";
+	if ($checkType =~ m\CPU\i){
+		$status_string = "Process $opt_N : $data_to_check % CPU";
+        }elsif ($checkType =~ m\MEMORY\i){
+		$status_string = "Process $opt_N : $data_to_check Bytes of used memory";
+	}elsif ($checkType =~ m\IO\i){
+		$status_string = "Process $opt_N : $data_to_check IOPs per second";
+	}elsif ($checkType =~ m\THREADS\i){
+		$status_string = "Process $opt_N : $data_to_check Threads running";
+	}
+	if ($data_to_check >= $critical){
+		if ($opt_R){
+			print "$opt_R ";
+		}
+		print "CRITICAL: $status_string $returnmessage|$perfomance\n";
+		exit $ERRORS{'CRITICAL'};
+	}elsif ($data_to_check >= $warning){
+                print "WARNING: $status_string $returnmessage|$perfomance\n";
+                exit $ERRORS{'WARNING'};
+	}else{
+                print "OK: $status_string $returnmessage|$perfomance\n";
+                exit $ERRORS{'OK'};
+	}
+}
+
+
+sub usage {
+	print "::Process Resource Usage Check Instructions::\n\n";
+	print " -h|help,	Display this help information\n";
+	print " -C|Check,	Specify a check type: ICPU(%), ACPU(%), Memory(KB), IO, stats\n";
+        print "			ICPU does two queries 5 seconds apart.\n";
+        print "			ACPU provides average CPU usage since last check.\n";
+	print "			IO is performance data only .\n";
+        print "			Note: The ACPU and IO options only works with a PID file (see below)\n";
+        print "			stats will report CPU,Memory, VSZ and RSS by default\n";
+        print "			It will only alert if the process is not running\n";
+	print " -iostats,	Add disk IO information to any check\n";
+        print " -memorystats,	Adds memory stats tp any check\n"; 
+	print "	***These options are for the stats and ACPU checks only***\n";
+	print " -multicpu,	Use CPU values like that of top and ps rather than true percantages\n";
+	print "			 With this option the max cpu usage is 100% * number of logical cores\n";
+	print "			 Without this option max cpu usage is 100%\n"; 
+	print "	***The following options only work for the CPU and Memory checks***\n"; 
+        print " -w|warning,	Specify a warning level for the check\n";
+        print "			 The default is 60 percent or 1000000 kilobytes\n";
+        print " -c|critical,	Specify a critical level for the check\n";
+        print "			 The default is 70 percent or 2000000 kilobytes\n";
+        print " -M|message,	Specify a message to return on failure\n";
+        print " -R|startup,	The script to use to restart the process\n";
+        print "			 If selected this will be added the the output on CRITICAL\n";
+        print "			 This is an easy way to pass information to an Event Handler\n";
+	print "	***Highly reccomended that you use this***\n";
+        print " -N|name,	Specify a differnet name for the process\n";
+        print "			 This is for display in Nagios messages\n";
+        print "			 Example: check_process -p mssql -N MasterDB\n";
+        print "			 The mysqld process will be monitored and the Nagios message will read:\n";
+        print "				The MasterDB process is currently OK.\n";
+        print "	***Only use one of the following***\n";
+        print " -p|processname,	Specify a process name to be monitored\n\n";
+        print "Script written by Noah Guttman and Copyright (C) 2011 Noah Guttman.\n";
+        print "This script is released and distributed under the terms of the GNU\n";
+        print "General Public License.     >>>>    http://www.gnu.org/licenses/\n";
+        print "";
+        print "This program is free software: you can redistribute it and/or modify\n";
+        print "it under the terms of the GNU General Public License as published by\n";
+        print "the Free Software Foundation.\n\n";
+        print "This program is distributed in the hope that it will be useful,\n";
+        print "but WITHOUT ANY WARRANTY; without even the implied warranty of\n";
+        print "MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n";
+        print "GNU General Public License for more details.\n";
+        print ">>>>    http://www.gnu.org/licenses/\n";
+        exit $ERRORS{'UNKNOWN'}; 
+}
+
+sub average_cpu {
+	my $old_process_cpu=0;
+        my $current_process_cpu=0;
+        my $old_system_cpu=0;
+        my $current_system_cpu=0;
+        my $temp_file = "/tmp/$host"."$opt_p"."_acpu.tmp";
+        my $input="";
+	my $results;
+	my $performance_data;
+	my @multiline_results;
+        my $commandstring;
+	my $processes_running=0;
+        if (-r $temp_file){
+		#First we load the old data
+                $input = `cat $temp_file`;
+                ($old_system_cpu, $old_process_cpu) = split(" ",$input);
+        }
+        #next we load the current data
+	$commandstring = "/usr/local/nagios/bin/wmic -U $username\%$password //$host \"select Name,PercentProcessorTime,Timestamp_Sys100NS from Win32_PerfRawData_PerfProc_Process WHERE Name like '$opt_p'\"";
+        @multiline_results = `$commandstring`;
+	foreach my $line (@multiline_results){
+                if ($line =~ m\$opt_p\){
+			chomp($line);
+                        my @row = split(/\|/, $line);
+                        $current_process_cpu += $row[1];
+			$current_system_cpu = $row[2];
+                        $processes_running++;
+                }
+	}
+        if (-e $temp_file){
+        	#now we dump the old temp file
+                $commandstring = ("/bin/rm -f $temp_file");
+                system ($commandstring);
+        }
+        # write the new one
+        $commandstring = ("/bin/echo -n \'$current_system_cpu $current_process_cpu\' \>\> $temp_file");
+        system ($commandstring);
+        #we check to see if we have data to compare
+        if (($old_process_cpu) && ($old_system_cpu)){
+        	#now we can calculate the CPU usage
+                $results = ((($current_process_cpu - $old_process_cpu) /($current_system_cpu - $old_system_cpu)) *100);
+		if ($multiplecpu){
+			# we adjust so that full use is 100 * # of cores
+			$commandstring = "/usr/local/nagios/bin/wmic -U $username\%$password //$host \"select name from Win32_PerfRawData_PerfOS_Processor where Name!='_Total'\"";
+			@multiline_results = `$commandstring`;
+			$multiplecpu = (pop @multiline_results) +1;
+			$results = $results * $multiplecpu;
+		}
+                #round for significant digits
+                $results = sprintf("%.4f",$results);
+		$performance_data = "CPU=$results"."%;;;; ";
+		return ($results, $performance_data, $processes_running) ;
+
+        }else{
+		#There may be no data this run
+		$results = -1;
+		$performance_data = "";
+		return ($results, $performance_data, $processes_running);
+	}
+}
+
+sub instant_cpu {
+        my $old_process_cpu=0;
+        my $current_process_cpu=0;
+        my $old_system_cpu=0;
+        my $current_system_cpu=0;
+        my $results;
+        my @multiline_results;
+        my $commandstring;
+	my $performance_data;
+	my $processes_running=0;
+        #First we load the old data
+        $commandstring = "/usr/local/nagios/bin/wmic -U $username\%$password //$host \"select Name,PercentProcessorTime,Timestamp_Sys100NS from Win32_PerfRawData_PerfProc_Process WHERE Name like '$opt_p'\"";
+        @multiline_results = `$commandstring`;
+        foreach my $line (@multiline_results){
+                if ($line =~ m\$opt_p\){
+                        chomp($line);
+                        my @row = split(/\|/, $line);
+                        $old_process_cpu += $row[1];
+                        $old_system_cpu = $row[2];
+                }
+        }
+	
+	#Now wait wait before taking another sample
+	sleep($sample_time);
+
+        #next we load the current data
+        $commandstring = "/usr/local/nagios/bin/wmic -U $username\%$password //$host \"select Name,PercentProcessorTime,Timestamp_Sys100NS from Win32_PerfRawData_PerfProc_Process WHERE Name like '$opt_p'\"";
+        @multiline_results = `$commandstring`;
+        foreach my $line (@multiline_results){
+                if ($line =~ m\$opt_p\){
+			chomp($line);
+                        my @row = split(/\|/, $line);
+                        $current_process_cpu += $row[1];
+                        $current_system_cpu = $row[2];
+                        $processes_running++;
+                }
+        }
+        #we check to see if we have data to compare
+        if (($old_process_cpu) && ($old_system_cpu)){
+                #now we can calculate the CPU usage
+                $results = ((($current_process_cpu - $old_process_cpu) /($current_system_cpu - $old_system_cpu)) *100);
+                if ($multiplecpu){
+                        # we adjust so that full use is 100 * # of cores
+                        $commandstring = "/usr/local/nagios/bin/wmic -U $username\%$password //$host \"select name from Win32_PerfRawData_PerfOS_Processor where Name!='_Total'\"";
+                        @multiline_results = `$commandstring`;
+                        $multiplecpu = (pop @multiline_results) +1;
+                        $results = $results * $multiplecpu;
+                }
+                #round for significant digits
+                $results = sprintf("%.4f",$results);
+		$performance_data = "CPU=$results"."%;;;; ";
+                return ($results, $performance_data, $processes_running) ;	
+        }else{
+                #There may be no data this run (which is an error)
+		$results = -1;
+                $performance_data = "";
+                return ($results, $performance_data, $processes_running);
+        }
+}
+
+
+sub average_disk_io {
+        my $old_IODataBytesPersec=0;
+        my $current_IODataBytesPersec=0;
+	my $IODataBytesPersec=0;
+
+        my $old_IODataOperationsPersec=0;
+        my $current_IODataOperationsPersec=0;
+	my $IODataOperationsPersec=0;
+
+	my $old_IOOtherBytesPersec=0;
+	my $current_IOOtherBytesPersec=0;
+	my $IOOtherBytesPersec=0;
+
+        my $old_IOOtherOperationsPersec=0;
+        my $current_IOOtherOperationsPersec=0;
+        my $IOOtherOperationsPersec=0;
+
+        my $old_IOReadBytesPersec=0;
+        my $current_IOReadBytesPersec=0;
+        my $IOReadBytesPersec=0;
+
+        my $old_IOReadOperationsPersec=0;
+        my $current_IOReadOperationsPersec=0;
+        my $IOReadOperationsPersec=0;
+
+        my $old_IOWriteBytesPersec=0;
+        my $current_IOWriteBytesPersec=0;
+        my $IOWriteBytesPersec=0;
+
+        my $old_IOWriteOperationsPersec=0;
+        my $current_IOWriteOperationsPersec=0;
+        my $IOWriteOperationsPersec=0;
+
+	my $old_system_cpu;
+	my $current_system_cpu;
+	my $system_cpu;
+	my $input;
+	my $commandstring;
+	my $processes_running=0;
+	
+	my $results;
+	my $performance_data;
+
+	my @multiline_results;
+        my $temp_file = "/tmp/$host"."$opt_p"."_IO.tmp";
+
+	#First we load the old data
+        if (-r $temp_file){
+                #First we load the old data
+                $input = `cat $temp_file`;
+		($old_IODataBytesPersec, $old_IODataOperationsPersec, $old_IOOtherBytesPersec, $old_IOOtherOperationsPersec, $old_IOReadBytesPersec, $old_IOReadOperationsPersec, $old_IOWriteBytesPersec, $old_IOWriteOperationsPersec, $old_system_cpu) = split(" ",$input);
+	}
+	#Now we get the new data
+	$commandstring = "/usr/local/nagios/bin/wmic -U $username\%$password //$host \"select IODataOperationsPersec,IOOtherBytesPersec,IOOtherOperationsPersec,IOReadBytesPersec,IOReadOperationsPersec,IOWriteBytesPersec,IOWriteOperationsPersec,Name,Timestamp_Sys100NS from Win32_PerfRawData_PerfProc_Process WHERE Name like '$opt_p'\"";
+
+
+        @multiline_results = `$commandstring`;
+	foreach my $line (@multiline_results){
+                if ($line =~ m\$opt_p\){
+			chomp($line);
+                        my @row = split(/\|/, $line);
+			$current_IODataOperationsPersec += $row[0];
+			$current_IOOtherBytesPersec += $row[1];
+                        $current_IOOtherOperationsPersec += $row[2];
+                        $current_IOReadBytesPersec += $row[3];
+                        $current_IOReadOperationsPersec += $row[4];
+                        $current_IOWriteBytesPersec += $row[5];
+                        $current_IOWriteOperationsPersec += $row[6];
+			$current_system_cpu = $row[8];
+
+                        $processes_running++;
+                }
+        }
+
+        if (-e $temp_file){
+                #now we dump the old temp file
+                $commandstring = ("/bin/rm -f $temp_file");
+                system ($commandstring);
+        }
+        # write the new one
+        $commandstring = ("/bin/echo -n \'$current_IODataBytesPersec $current_IODataOperationsPersec $current_IOOtherBytesPersec $current_IOOtherOperationsPersec $current_IOReadBytesPersec $current_IOReadOperationsPersec $current_IOWriteBytesPersec $current_IOWriteOperationsPersec $current_system_cpu\' \>\> $temp_file");
+        system ($commandstring);
+	
+	if (($current_IOReadOperationsPersec) && ($old_IOReadOperationsPersec)){
+		$system_cpu = ($current_system_cpu - $old_system_cpu);
+		$IODataBytesPersec = ((($current_IODataBytesPersec - $old_IODataBytesPersec) / $system_cpu) *100);
+		$IODataOperationsPersec = ((($current_IODataOperationsPersec - $old_IODataOperationsPersec) / $system_cpu) *100);
+		$IOOtherBytesPersec = ((($current_IOOtherBytesPersec - $old_IOOtherBytesPersec) / $system_cpu) *100);
+		$IOOtherOperationsPersec = ((($current_IOOtherOperationsPersec - $old_IOOtherOperationsPersec) / $system_cpu) *100);
+		$IOReadBytesPersec = ((($current_IOReadBytesPersec - $old_IOReadBytesPersec) / $system_cpu) *100);
+		$IOReadOperationsPersec = ((($current_IOReadOperationsPersec - $old_IOReadOperationsPersec) / $system_cpu) *100);
+		$IOWriteBytesPersec = ((($current_IOWriteBytesPersec - $old_IOWriteBytesPersec) / $system_cpu) *100);
+		$IOWriteOperationsPersec = ((($current_IOWriteOperationsPersec - $old_IOWriteOperationsPersec) / $system_cpu) *100);
+
+		#Next we truncate the data to 4 decimal places
+		$IODataBytesPersec = sprintf("%.4f",$IODataBytesPersec);
+		$IODataOperationsPersec = sprintf("%.4f",$IODataOperationsPersec);
+		$IOOtherBytesPersec = sprintf("%.4f",$IOOtherBytesPersec);
+		$IOOtherOperationsPersec  = sprintf("%.4f",$IOOtherOperationsPersec);
+		$IOReadBytesPersec = sprintf("%.4f",$IOReadBytesPersec);
+		$IOReadOperationsPersec = sprintf("%.4f",$IOReadOperationsPersec);
+		$IOWriteBytesPersec = sprintf("%.4f",$IOWriteBytesPersec);
+		$IOWriteOperationsPersec = sprintf("%.4f",$IOWriteOperationsPersec);
+		
+
+		#Now we create the performance data string
+		$performance_data="";
+		$performance_data .= "IO_Data_Per_Sec=$IODataBytesPersec"."B;;;; ";
+		$performance_data .= "IO_Data_Operations_Per_Sec=$IODataOperationsPersec;;;; ";
+		$performance_data .= "IO_Other_Per_Sec=$IOOtherBytesPersec"."B;;;; ";
+		$performance_data .= "IO_Other_Operations_Per_Sec=$IOOtherOperationsPersec;;;; ";
+		$performance_data .= "IO_Read_Per_Sec=$IOReadBytesPersec"."B;;;; ";
+		$performance_data .= "IO_Read_Operations_Per_Sec=$IOReadOperationsPersec;;;; ";
+		$performance_data .= "IO_Write_Per_Sec=$IOWriteBytesPersec"."B;;;; ";
+		$performance_data .= "IO_Write_Operations_Per_Sec=$IOWriteOperationsPersec;;;; ";
+
+
+		#we monitor on IOPs per second so:
+		$results = $IODataOperationsPersec;
+		#Now we return the data
+                return ($results, $performance_data, $processes_running);
+        }else{
+                #There may be no data this run
+                $results = -1;
+		$performance_data="";
+                return ($results, $performance_data, $processes_running);
+        }
+}
+
+sub memory_usage {
+	my $PageFileBytes_checkresult=0;
+	my $PoolNonpagedBytes_checkresult=0;
+	my $PoolPagedBytes_checkresult=0;
+	my $PrivateBytes_checkresult=0;
+	my $VirtualBytes_checkresult=0;
+
+        my $results;
+	my $performance_data="";
+
+        my @multiline_results;
+        my $commandstring;
+
+	my $processes_running=0;
+
+        #First we load the data
+        $commandstring = "/usr/local/nagios/bin/wmic -U $username\%$password //$host \"select Name,PageFileBytes,PoolNonpagedBytes,PoolPagedBytes,PrivateBytes,VirtualBytes from Win32_PerfRawData_PerfProc_Process WHERE Name like '$opt_p'\"";
+        @multiline_results = `$commandstring`;
+
+        foreach my $line (@multiline_results){
+                if ($line =~ m\$opt_p\){
+			chomp($line);
+                        my @row = split(/\|/, $line);
+                        $PageFileBytes_checkresult += $row[1];
+			$PoolNonpagedBytes_checkresult += $row[2];
+			$PoolPagedBytes_checkresult += $row[3];
+			$PrivateBytes_checkresult += $row[4];
+			$VirtualBytes_checkresult += $row[5];
+                        $processes_running++;
+                }
+        }
+	#now we build the performance data
+	$performance_data .= "Page_File=$PageFileBytes_checkresult"."B;;;; ";
+	$performance_data .= "Pool_Nonpaged=$PoolNonpagedBytes_checkresult"."B;;;;  ";
+	$performance_data .= "Pool_Paged=$PoolPagedBytes_checkresult"."B;;;; ";
+	$performance_data .= "Private=$PrivateBytes_checkresult"."B;;;; ";
+	$performance_data .= "Virtual=$VirtualBytes_checkresult"."B;;;; ";
+
+	#We monitor by PrivateBytes
+	$results = $PrivateBytes_checkresult;
+	return ($results, $performance_data, $processes_running);
+}
+
+sub threads_usage {
+        my $ThreadCount_checkresults=0;
+
+        my $results;
+        my $performance_data="";
+
+        my @multiline_results;
+        my $commandstring;
+
+	my $processes_running=0;
+
+        #First we load the data
+        $commandstring = "/usr/local/nagios/bin/wmic -U $username\%$password //$host \"select Name,ThreadCount from Win32_PerfRawData_PerfProc_Process WHERE Name like '$opt_p'\"";
+        @multiline_results = `$commandstring`;
+	foreach my $line (@multiline_results){
+	        if ($line =~ m\$opt_p\){
+			chomp($line);
+			my @row = split(/\|/, $line);
+	                $ThreadCount_checkresults += $row[1];
+			$processes_running++;
+		}
+	}
+	if ($processes_running !=0){
+                #now we build the performance data
+                $performance_data .= "Thread_Count=$ThreadCount_checkresults;;;; ";
+                
+		$results = $ThreadCount_checkresults;
+	}
+        return ($results, $performance_data, $processes_running);
+}
+
