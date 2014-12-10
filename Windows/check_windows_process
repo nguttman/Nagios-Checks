@@ -119,7 +119,7 @@ if ($checkType =~ m\ACPU\i){
         print "There is an error with your check's syntax.\n\n";
         usage();
 }
-#print "***$data_to_check***$perfomance***$is_running***\n";
+
 if ((($get_memory_stats) && ($checkType !~ m\MEMORY\i)) && ($checkType !~ m\STATS\i)) {
         my $temp_perfomance="";
         my $temp_data_to_check="";
@@ -181,26 +181,28 @@ if ($is_running == 0){
 
 
 sub usage {
-	print "::Process Resource Usage Check Instructions::\n\n";
+	print "::Windows Process Check Instructions::\n\n";
 	print " -h|help,	Display this help information\n";
+	print " -H|host,	IP or hostname of server\n";
+	print " -U|username	Username to use for authentication\n";
+	print " -P|password	Paswword to use for authentication\n";
 	print " -C|Check,	Specify a check type: ICPU(%), ACPU(%), Memory(KB), IO, stats\n";
-        print "			ICPU does two queries 5 seconds apart.\n";
+        print "			ICPU does two queries a few seconds apart. (default 5)\n";
         print "			ACPU provides average CPU usage since last check.\n";
 	print "			IO is performance data only .\n";
-        print "			Note: The ACPU and IO options only works with a PID file (see below)\n";
-        print "			stats will report CPU,Memory, VSZ and RSS by default\n";
-        print "			It will only alert if the process is not running\n";
+        print "	-S\sampletime	Set the time interval for the ICPU check.\n";
+        print "			stats will only alert if the process is not running and report everything\n";
 	print " -iostats,	Add disk IO information to any check\n";
-        print " -memorystats,	Adds memory stats tp any check\n"; 
-	print "	***These options are for the stats and ACPU checks only***\n";
+        print " -memorystats,	Adds memory stats to any check\n";
+        print " -threads,	Adds threads stats to any check\n";
+	print "	***This options are for the ICPU and ACPU checks only***\n";
 	print " -multicpu,	Use CPU values like that of top and ps rather than true percantages\n";
 	print "			 With this option the max cpu usage is 100% * number of logical cores\n";
 	print "			 Without this option max cpu usage is 100%\n"; 
-	print "	***The following options only work for the CPU and Memory checks***\n"; 
         print " -w|warning,	Specify a warning level for the check\n";
-        print "			 The default is 60 percent or 1000000 kilobytes\n";
         print " -c|critical,	Specify a critical level for the check\n";
-        print "			 The default is 70 percent or 2000000 kilobytes\n";
+        print "			 For memory checks thresholds are declared in Bytes\n";
+        print "			 Thresholds must be defined fore every check except stats\n";
         print " -M|message,	Specify a message to return on failure\n";
         print " -R|startup,	The script to use to restart the process\n";
         print "			 If selected this will be added the the output on CRITICAL\n";
@@ -208,12 +210,11 @@ sub usage {
 	print "	***Highly reccomended that you use this***\n";
         print " -N|name,	Specify a differnet name for the process\n";
         print "			 This is for display in Nagios messages\n";
-        print "			 Example: check_process -p mssql -N MasterDB\n";
+        print "			 Example: check_windows_process -p mssql -N MasterDB\n";
         print "			 The mysqld process will be monitored and the Nagios message will read:\n";
         print "				The MasterDB process is currently OK.\n";
-        print "	***Only use one of the following***\n";
         print " -p|processname,	Specify a process name to be monitored\n\n";
-        print "Script written by Noah Guttman and Copyright (C) 2011 Noah Guttman.\n";
+        print "Script written by Noah Guttman and Copyright (C) 2014 Noah Guttman.\n";
         print "This script is released and distributed under the terms of the GNU\n";
         print "General Public License.     >>>>    http://www.gnu.org/licenses/\n";
         print "";
