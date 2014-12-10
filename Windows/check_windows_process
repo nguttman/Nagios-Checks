@@ -250,6 +250,10 @@ sub average_cpu {
 	$commandstring = "/usr/local/nagios/bin/wmic -U $username\%$password //$host \"select Name,PercentProcessorTime,Timestamp_Sys100NS from Win32_PerfRawData_PerfProc_Process WHERE Name like '$opt_p'\"";
         @multiline_results = `$commandstring`;
 	foreach my $line (@multiline_results){
+		if ($line =~ m\ERROR\i){
+                	print "The query has failed with the output: @multiline_results\n";
+                	exit $ERRORS{'UNKNOWN'};
+		}
                 if ($line =~ m\$opt_p\){
 			chomp($line);
                         my @row = split(/\|/, $line);
@@ -304,6 +308,10 @@ sub instant_cpu {
         $commandstring = "/usr/local/nagios/bin/wmic -U $username\%$password //$host \"select Name,PercentProcessorTime,Timestamp_Sys100NS from Win32_PerfRawData_PerfProc_Process WHERE Name like '$opt_p'\"";
         @multiline_results = `$commandstring`;
         foreach my $line (@multiline_results){
+                if ($line =~ m\ERROR\i){
+                        print "The query has failed with the output: @multiline_results\n";
+                        exit $ERRORS{'UNKNOWN'};
+                }
                 if ($line =~ m\$opt_p\){
                         chomp($line);
                         my @row = split(/\|/, $line);
@@ -409,6 +417,10 @@ sub average_disk_io {
 
         @multiline_results = `$commandstring`;
 	foreach my $line (@multiline_results){
+                if ($line =~ m\ERROR\i){
+                        print "The query has failed with the output: @multiline_results\n";
+                        exit $ERRORS{'UNKNOWN'};
+                }
                 if ($line =~ m\$opt_p\){
 			chomp($line);
                         my @row = split(/\|/, $line);
@@ -498,8 +510,11 @@ sub memory_usage {
         #First we load the data
         $commandstring = "/usr/local/nagios/bin/wmic -U $username\%$password //$host \"select Name,PageFileBytes,PoolNonpagedBytes,PoolPagedBytes,PrivateBytes,VirtualBytes from Win32_PerfRawData_PerfProc_Process WHERE Name like '$opt_p'\"";
         @multiline_results = `$commandstring`;
-
         foreach my $line (@multiline_results){
+                if ($line =~ m\ERROR\i){
+                        print "The query has failed with the output: @multiline_results\n";
+                        exit $ERRORS{'UNKNOWN'};
+                }
                 if ($line =~ m\$opt_p\){
 			chomp($line);
                         my @row = split(/\|/, $line);
@@ -538,6 +553,10 @@ sub threads_usage {
         $commandstring = "/usr/local/nagios/bin/wmic -U $username\%$password //$host \"select Name,ThreadCount from Win32_PerfRawData_PerfProc_Process WHERE Name like '$opt_p'\"";
         @multiline_results = `$commandstring`;
 	foreach my $line (@multiline_results){
+                if ($line =~ m\ERROR\i){
+                        print "The query has failed with the output: @multiline_results\n";
+                        exit $ERRORS{'UNKNOWN'};
+                }
 	        if ($line =~ m\$opt_p\){
 			chomp($line);
 			my @row = split(/\|/, $line);
