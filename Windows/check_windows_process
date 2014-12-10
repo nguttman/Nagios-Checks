@@ -190,7 +190,7 @@ sub usage {
         print "			ICPU does two queries a few seconds apart. (default 5)\n";
         print "			ACPU provides average CPU usage since last check.\n";
 	print "			IO is performance data only .\n";
-        print "	-S\sampletime	Set the time interval for the ICPU check.\n";
+        print "	-S|sampletime	Set the time interval for the ICPU check.\n";
         print "			stats will only alert if the process is not running and report everything\n";
 	print " -iostats,	Add disk IO information to any check\n";
         print " -memorystats,	Adds memory stats to any check\n";
