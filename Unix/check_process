@@ -35,7 +35,14 @@ $SIG{'ALRM'} = sub {
 };
 #alarm 20;
 ##init();
-my $sudo_rights = `sudo -l |grep NOPASSWD`;
+#We need to check if we can sudo just in case we need to
+#On man *nix systems if you have entries in the sudoers file then running sudo -l 
+#will prompt for a pssword rather than syaing you have no sudo rights (and then say you have no rights)
+#We get arround this by adding -A
+#if there are entires in sudoers they are returned
+#if there are no entires we get an error about nothing defined to use with -A
+#In either case the script can contiue rather than locking.
+my $sudo_rights = `sudo -l -A|grep NOPASSWD`;
 my $can_sudo=0;
 if (($sudo_rights =~ m\cat\) || ($sudo_rights =~ m\all\i)){
 	$can_sudo=1;
