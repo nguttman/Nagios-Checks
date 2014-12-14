@@ -151,7 +151,7 @@ if ($is_running == 0){
         print ("CRITICAL:The $returnname process doesn't appear to be running. $returnmessage\n");
 	exit $ERRORS{'CRITICAL'};
 }elsif ($data_to_check == -1){
-	print ("UNKNOWN:The $returnname process does not have data avaialble yet. It should be availabale on next run.\n");
+	print ("UNKNOWN:The $returnname process does not have data available yet. It should be available on next run.\n");
         exit $ERRORS{'UNKNOWN'};
 }else{
 	my $status_string="";
