@@ -33,7 +33,7 @@ $SIG{'ALRM'} = sub {
 	print "Something has gone wrong and the check has timed out. This should be looked into\n";
 	exit $ERRORS{'UNKNOWN'};
 };
-#alarm 20;
+alarm 20;
 ##init();
 #We need to check if we can sudo just in case we need to
 #On man *nix systems if you have entries in the sudoers file then running sudo -l 
