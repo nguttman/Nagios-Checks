@@ -186,7 +186,7 @@ sub usage {
 	print " -H|host,	IP or hostname of server\n";
 	print " -U|username	Username to use for authentication\n";
 	print " -P|password	Paswword to use for authentication\n";
-	print " -C|Check,	Specify a check type: ICPU(%), ACPU(%), Memory(KB), IO, stats\n";
+	print " -C|Check,	Specify a check type: ICPU(%), ACPU(%), Memory(KB), IO, threads, stats\n";
         print "			ICPU does two queries a few seconds apart. (default 5)\n";
         print "			ACPU provides average CPU usage since last check.\n";
 	print "			IO is performance data only .\n";
@@ -540,6 +540,7 @@ sub memory_usage {
 
 sub threads_usage {
         my $ThreadCount_checkresults=0;
+	my $HandleCount_checkresults=0;
 
         my $results;
         my $performance_data="";
@@ -550,7 +551,7 @@ sub threads_usage {
 	my $processes_running=0;
 
         #First we load the data
-        $commandstring = "/usr/local/nagios/bin/wmic -U $username\%$password //$host \"select Name,ThreadCount from Win32_PerfRawData_PerfProc_Process WHERE Name like '$opt_p'\"";
+        $commandstring = "/usr/local/nagios/bin/wmic -U $username\%$password //$host \"select ThreadCount,Name,HandleCount from Win32_PerfRawData_PerfProc_Process WHERE Name like '$opt_p'\"";
         @multiline_results = `$commandstring`;
 	foreach my $line (@multiline_results){
                 if ($line =~ m\ERROR\i){
@@ -560,13 +561,14 @@ sub threads_usage {
 	        if ($line =~ m\$opt_p\){
 			chomp($line);
 			my @row = split(/\|/, $line);
-	                $ThreadCount_checkresults += $row[1];
+	                $ThreadCount_checkresults += $row[0];
+			$HandleCount_checkresults += $row[2];
 			$processes_running++;
 		}
 	}
 	if ($processes_running !=0){
                 #now we build the performance data
-                $performance_data .= "Thread_Count=$ThreadCount_checkresults;;;; ";
+                $performance_data .= "Thread_Count=$ThreadCount_checkresults;;;; Handle_Count=$HandleCount_checkresults;;;; ";
                 
 		$results = $ThreadCount_checkresults;
 	}
