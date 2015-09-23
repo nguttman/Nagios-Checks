@@ -423,14 +423,14 @@ if ($opt_P){
         if (-r $opt_P){
 		$PID = (`cat $opt_P`);
 		chomp($PID);
-		$processesrunning=(`ps -eo pid,ppid |grep -vw grep |grep -vw check_process_resources |grep -cw $PID`);
+		$processesrunning=(`ps -eo pid,ppid |grep -vw grep |grep -vw check_process |grep -cw $PID`);
 	}else{
 		$processesrunning=0;
 	}
 }elsif ($opt_p){
-        $processesrunning=(`ps -eo comm |grep -vw grep |grep -wv check_process_resources |grep -c $opt_p`);
+        $processesrunning=(`ps -eo comm |grep -vw grep |grep -wv check_process |grep -c $opt_p`);
 }elsif ($opt_a){
-        $processesrunning=(`ps -eo cmd |grep -vw grep |grep -vw check_process_resources |grep -c $opt_a`);
+        $processesrunning=(`ps -eo cmd |grep -vw grep |grep -vw check_process |grep -c $opt_a`);
 }
 chomp($processesrunning);
 # processesrunning is is now the number of running processes
@@ -503,9 +503,9 @@ if (($checktoken< 7) &&($checktoken > 2)){
 
         if ($opt_P){
 		if ($no_children){
-			@external_data = (`ps -eo pid,pid,pcpu,pmem,vsz,rss,cmd --no-header |grep -vw grep |grep -vw check_process_resources |grep " $PID " |awk \'{print \$3" "\$4" " \$5" " \$6}\'`);
+			@external_data = (`ps -eo pid,pid,pcpu,pmem,vsz,rss,cmd --no-header |grep -vw grep |grep -vw check_process |grep " $PID " |awk \'{print \$3" "\$4" " \$5" " \$6}\'`);
 		}else{
-			@external_data = (`ps -eo ppid,pid,pcpu,pmem,vsz,rss,cmd --no-header |grep -vw grep |grep -vw check_process_resources |grep " $PID " |awk \'{print \$3" "\$4" " \$5" " \$6}\'`);
+			@external_data = (`ps -eo ppid,pid,pcpu,pmem,vsz,rss,cmd --no-header |grep -vw grep |grep -vw check_process |grep " $PID " |awk \'{print \$3" "\$4" " \$5" " \$6}\'`);
 		}
 		if ($get_acpu_stats){
 			$acpu = average_cpu();
@@ -514,10 +514,10 @@ if (($checktoken< 7) &&($checktoken > 2)){
 			$disk_stats = average_disk_io();
 		}
         }elsif ($opt_p){
-		@external_data = (`ps -eo ppid,pid,pcpu,pmem,vsz,rss,comm --no-header |grep -vw grep |grep -vw check_process_resources |grep $opt_p |awk \'{print \$3" "\$4" " \$5" " \$6}\'`);
+		@external_data = (`ps -eo ppid,pid,pcpu,pmem,vsz,rss,comm --no-header |grep -vw grep |grep -vw check_process |grep $opt_p |awk \'{print \$3" "\$4" " \$5" " \$6}\'`);
 
         }elsif ($opt_a){
-		@external_data = (`ps -eo ppid,pid,pcpu,pmem,vsz,rss,cmd --no-header |grep -vw grep |grep -vw check_process_resources |grep $opt_a |awk \'{print \$3" "\$4" " \$5" "\$6}\'`);
+		@external_data = (`ps -eo ppid,pid,pcpu,pmem,vsz,rss,cmd --no-header |grep -vw grep |grep -vw check_process |grep $opt_a |awk \'{print \$3" "\$4" " \$5" "\$6}\'`);
         }
 	foreach my $line (@external_data){
         	if ($line !~ /^$/){
