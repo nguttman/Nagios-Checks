@@ -27,6 +27,7 @@ my $multiplecpu;
 my $get_acpu_stats;
 my $get_diskio_stats;
 my $no_children;
+my $top_columns=999;
 
 # Make the Nagios devs happy
 $SIG{'ALRM'} = sub {
@@ -480,9 +481,9 @@ if (($checktoken< 7) &&($checktoken > 2)){
 			}
 		}
         }elsif ($opt_p){
-		@external_data = (`top -b -n 1|grep -vw grep |grep -vw check_process |grep $opt_p |awk \'{print \$9}\'`);
+		@external_data = (`COLUMNS=$top_columns top -b -n 1|grep -vw grep |grep -vw check_process |grep $opt_p |awk \'{print \$9}\'`);
         }elsif ($opt_a){
-		@external_data = (`top -b -n 1 -c |grep -vw grep |grep -vw check_process |grep $opt_a |awk \'{print \$9}\'`);
+		@external_data = (`COLUMNS=$top_columns top -b -n 1 -c |grep -vw grep |grep -vw check_process |grep $opt_a |awk \'{print \$9}\'`);
         }
         foreach my $line (@external_data){
                  if ($line !~ /^$/){
