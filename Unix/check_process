@@ -160,9 +160,9 @@ sub real_memory_usage {
 
   foreach my $child_PID (@PID_list){
     if (-e "/proc/$child_PID/smaps"){
-      if (-r "/proc/$child_PID/smaps"){
-        @statm_file = `cat /proc/$child_PID/smaps |awk \'{print \$1 \" \" \$2}\'`; #all values are in kB
-      }else{
+      #if (-r "/proc/$child_PID/smaps"){
+      #  @statm_file = `cat /proc/$child_PID/smaps |awk \'{print \$1 \" \" \$2}\'`; #all values are in kB
+      #}else{
         if ($can_sudo){
           @statm_file = `sudo cat /proc/$child_PID/smaps |awk \'{print \$1 \" \" \$2}\'`;
         }else{
@@ -172,7 +172,7 @@ sub real_memory_usage {
           print ("CRITICAL:The file /proc/$child_PID/smaps exists but it cannot be read. Please grant nagios sudo NOPASSWD rights to the cat utility. You may also need to disable the requiretty option.\n");
           exit $ERRORS{'CRITICAL'};
         }
-      }
+      #}
     }else{
       #we cannot find the file so we error and exit
       if ($opt_R){
@@ -182,19 +182,19 @@ sub real_memory_usage {
       exit $ERRORS{'CRITICAL'};
     }
     foreach my $line (@statm_file){
-      if ($line =~ /Size/){
+      if ($line =~ /^Size/){
         $Size += substr($line,6);
-      }elsif ($line =~ /Rss/){
+      }elsif ($line =~ /^Rss/){
         $Rss += substr($line,5);
-      }elsif ($line =~ /Shared_Clean/){
+      }elsif ($line =~ /^Shared_Clean/){
          $Shared_Clean += substr($line,14);
-      }elsif ($line =~ /Shared_Dirty/){
+      }elsif ($line =~ /^Shared_Dirty/){
          $Shared_Dirty += substr($line,14);
-      }elsif ($line =~ /Private_Clean/){
+      }elsif ($line =~ /^Private_Clean/){
          $Private_Clean += substr($line,15);
-      }elsif ($line =~ /Private_Dirty/){
+      }elsif ($line =~ /^Private_Dirty/){
          $Private_Dirty += substr($line,15);
-      }elsif ($line =~ /Pss/){
+      }elsif ($line =~ /^Pss/){
          $Pss += substr($line,5);
       }
     }
@@ -259,6 +259,7 @@ sub top_cpu {
       }
     }
   }
+  return $cpu_percentage;
 }
 
 sub ps_cpu {
