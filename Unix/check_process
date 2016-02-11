@@ -95,7 +95,7 @@ sub usage {
   print " -h|help,  Display this help information\n";
   print " -C|Check,  Specify a check type: PCPU(%), ICPU(%), ACPU(%), Memory(%), VSZ, RSS,\n";
   print "       IO, PSS, stats\n";
-  print "      PSS reports actual memory usage with the duplicate counting of shared memory\n;
+  print "      PSS reports actual memory usage with the duplicate counting of shared memory\n";
   print "      PCPU uses the ps command.\n";
   print "      ICPU uses top with a 1 second sample rather than using the average from ps.\n";
   print "      ACPU uses the files under /proc/ to get the average CPU since the last check run.\n";
