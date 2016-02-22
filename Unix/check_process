@@ -452,7 +452,6 @@ sub average_disk_io {
   foreach my $line (@PID_list){
     if (-r "/proc/$line/io"){
       $input = `cat /proc/$line/io`;
-      ($bytes_read, $bytes_written, $read_trans, $write_trans, $disk_bytes_read, $disk_bytes_written, $canceled_bytes) = split("\n",$input);
     }elsif (-e "/proc/$line/io"){
       if ($can_sudo){
         $input = `sudo cat /proc/$line/io`;
@@ -464,6 +463,8 @@ sub average_disk_io {
         exit $ERRORS{'CRITICAL'};
       }
     }
+    ($bytes_read, $bytes_written, $read_trans, $write_trans, $disk_bytes_read, $disk_bytes_written, $canceled_bytes) = split("\n",$input);
+
     #Next we need to clean up  and sum the data
     $current_bytes_read += substr($bytes_read,7);
     $current_bytes_written += substr($bytes_written,7);
