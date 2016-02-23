@@ -627,6 +627,9 @@ if ($no_children){
       push(@PID_list,$line);
     }
   }
+  unless ($PID){
+          $PID = $PID_list[0];
+  }
 }
 
 
