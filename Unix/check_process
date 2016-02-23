@@ -27,6 +27,7 @@ my $multiplecpu;
 my $get_acpu_stats;
 my $get_diskio_stats;
 my $no_children;
+my $do_not_sudo;
 my $top_columns=999;
 
 my $G_Size=0;
@@ -47,6 +48,10 @@ my $G_disk_stats=-1;
 
 my @PID_list;
 
+my $sudo_rights ='';
+my $can_sudo=0;
+
+
 # Make the Nagios devs happy
 $SIG{'ALRM'} = sub {
         if ($opt_R){
@@ -59,18 +64,6 @@ alarm 20;
 
 
 ##init();
-#We need to check if we can sudo just in case we need to
-#On man *nix systems if you have entries in the sudoers file then running sudo -l 
-#will prompt for a pssword rather than syaing you have no sudo rights (and then say you have no rights)
-#We get arround this by adding -A
-#if there are entires in sudoers they are returned
-#if there are no entires we get an error about nothing defined to use with -A
-#In either case the script can contiue rather than locking.
-my $sudo_rights = `sudo -l |grep NOPASSWD`;
-my $can_sudo=0;
-if (($sudo_rights =~ m\cat\) || ($sudo_rights =~ m\all\i)){
-  $can_sudo=1;
-}
 &usage() if @ARGV == 0;
 
 GetOptions (
@@ -87,12 +80,31 @@ GetOptions (
   "diskio"                => \$get_diskio_stats,
   "average_cpu"           => \$get_acpu_stats,
   "nochildren"            => \$no_children,
+  "nosudo"		  => \$do_not_sudo,
   "h|help"                => sub { usage() },
 );
+
+#We need to check if we can sudo just in case we need to
+#On man *nix systems if you have entries in the sudoers file then running sudo -l
+#will prompt for a pssword rather than syaing you have no sudo rights (and then say you have no rights)
+#We get arround this by adding -A
+#if there are entires in sudoers they are returned
+#if there are no entires we get an error about nothing defined to use with -A
+#In either case the script can contiue rather than locking.
+if (!($do_not_sudo)){
+  $sudo_rights = `sudo -l |grep NOPASSWD`;
+  if (($sudo_rights =~ m\cat\) || ($sudo_rights =~ m\all\i)){
+    $can_sudo=1;
+  }
+}
+
+
 
 sub usage {
   print "::Process Resource Usage Check Instructions::\n\n";
   print " -h|help,  Display this help information\n";
+  print " -nosudo,  Do not use the sudo cat command to read files as needed\n";
+  print "      Using this option will likely prevent the check from working when run as any user other than root.\n";
   print " -C|Check,  Specify a check type: PCPU(%), ICPU(%), ACPU(%), Memory(%), VSZ, RSS,\n";
   print "       IO, PSS, stats\n";
   print "      PSS reports actual memory usage with the duplicate counting of shared memory\n";
@@ -160,9 +172,9 @@ sub real_memory_usage {
 
   foreach my $child_PID (@PID_list){
     if (-e "/proc/$child_PID/smaps"){
-      #if (-r "/proc/$child_PID/smaps"){
-      #  @statm_file = `cat /proc/$child_PID/smaps |awk \'{print \$1 \" \" \$2}\'`; #all values are in kB
-      #}else{
+      if ($do_not_sudo){
+        @statm_file = `cat /proc/$child_PID/smaps |awk \'{print \$1 \" \" \$2}\'`; #all values are in kB
+      }else{
         if ($can_sudo){
           @statm_file = `sudo cat /proc/$child_PID/smaps |awk \'{print \$1 \" \" \$2}\'`;
         }else{
@@ -172,7 +184,7 @@ sub real_memory_usage {
           print ("CRITICAL:The file /proc/$child_PID/smaps exists but it cannot be read. Please grant nagios sudo NOPASSWD rights to the cat utility. You may also need to disable the requiretty option.\n");
           exit $ERRORS{'CRITICAL'};
         }
-      #}
+      }
     }else{
       #we cannot find the file so we error and exit
       if ($opt_R){
@@ -303,7 +315,7 @@ sub average_cpu {
   }
   #next we load the current data
   if (-e "/proc/stat"){
-    if (-r "/proc/stat"){
+    if ($do_not_sudo){
       $current_system_cpu = `cat /proc/stat |grep \"cpu \" |awk \'{print \$2+\$3+\$4+\$5+\$6+\$7}\'`;
       chomp($current_system_cpu);
     }else{
@@ -328,7 +340,7 @@ sub average_cpu {
   }
   foreach my $child_PID (@PID_list){
     if (-e "/proc/$child_PID/stat"){
-      if (-r "/proc/$child_PID/stat"){
+      if ($do_not_sudo){
         $current_process_cpu += `cat /proc/$child_PID/stat |awk \'{print \$14+\$15+\$16+\$17}\'`;
       }else{
         if ($can_sudo){
@@ -426,7 +438,7 @@ sub average_disk_io {
 
   #next we load the current data
   if (-e "/proc/stat"){
-    if (-r "/proc/stat"){
+    if ($do_not_sudo){
       $current_system_cpu = `cat /proc/stat |grep \"cpu \" |awk \'{print \$2+\$3+\$4+\$5+\$6+\$7}\'`;
       chomp($current_system_cpu);
     }else{
@@ -450,7 +462,7 @@ sub average_disk_io {
   }
 
   foreach my $line (@PID_list){
-    if (-r "/proc/$line/io"){
+    if ((-r "/proc/$line/io") && ($do_not_sudo)){
       $input = `cat /proc/$line/io`;
     }elsif (-e "/proc/$line/io"){
       if ($can_sudo){
