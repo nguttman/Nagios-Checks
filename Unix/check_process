@@ -652,7 +652,12 @@ if ((($checkType =~ m\rss\i)||($checkType =~ m\pss\i))||($checkType =~ m\memory\
   ($G_Size,$G_Rss,$G_Shared_Clean,$G_Shared_Dirty,$G_Private_Clean,$G_Private_Dirty,$G_Pss)=real_memory_usage();
   if ($checkType =~ m\memory\i){
     my $system_memory = `cat /proc/meminfo  |grep MemTotal |awk \'{print \$2}\'`;
-    $G_Pmem = sprintf("%.4f",(($G_Pss/$system_memory) * 100));
+    #Older OSes may not have a PSS field, if we don't have it then we use RSS which is better than nothing
+    if ($G_Pss){
+      $G_Pmem = sprintf("%.4f",(($G_Pss/$system_memory) * 100));
+    }else{
+      $G_Pmem = sprintf("%.4f",(($G_Rss/$system_memory) * 100));
+    }
   }
   $extra_performance_data .= "Memory_Size=$G_Size"."KB;;;; Shared_Clean=$G_Shared_Clean"."KB;;;; Shared_Dirty=$G_Shared_Dirty"."KB;;;; Private_Clean=$G_Private_Clean"."KB;;;; Private_Dirty=$G_Private_Dirty"."KB;;;;";
 
@@ -676,8 +681,13 @@ if ((($checkType =~ m\rss\i)||($checkType =~ m\pss\i))||($checkType =~ m\memory\
   my $system_memory =`cat /proc/meminfo  |grep MemTotal |awk \'{print \$2}\'`;
 
   ($G_Size,$G_Rss,$G_Shared_Clean,$G_Shared_Dirty,$G_Private_Clean,$G_Private_Dirty,$G_Pss)=real_memory_usage();
-  $G_Pmem = sprintf("%.4f",(($G_Pss/$system_memory) * 100));
-  
+  #Older OSes may not have a PSS field, if we don't have it then we use RSS which is better than nothing
+  if ($G_Pss){
+    $G_Pmem = sprintf("%.4f",(($G_Pss/$system_memory) * 100));
+  }else{
+    $G_Pmem = sprintf("%.4f",(($G_Rss/$system_memory) * 100));
+  } 
+ 
   $G_vsz = vsz_memory_usage();
 
   $G_Pcpu = ps_cpu();
@@ -732,36 +742,36 @@ if (($checkType =~ m\stats\i)||($checkType =~ m\io\i)){
   exit $ERRORS{'OK'};
 }elsif (($checkType =~ m\cpu\i) || ($checkType =~ m\memory\i)){
   $text_output = $data_to_check."%";
-        $extra_performance_data .= " $checkType=$text_output;$warning;$critical;0;";
-        if ($data_to_check < $warning){
-                print ("Process $returnname OK: $text_output $checkType |$extra_performance_data\n");
-                exit $ERRORS{'OK'};
+  $extra_performance_data .= " $checkType=$text_output;$warning;$critical;0;";
+  if ($data_to_check < $warning){
+    print ("Process $returnname OK: $text_output $checkType |$extra_performance_data\n");
+    exit $ERRORS{'OK'};
   }elsif (($data_to_check >= $warning) && ($data_to_check < $critical)){
-                print ("Process $returnname WARNING: $text_output $checkType $returnmessage |$extra_performance_data\n");
-                exit $ERRORS{'WARNING'};
-        }else{
+    print ("Process $returnname WARNING: $text_output $checkType $returnmessage |$extra_performance_data\n");
+    exit $ERRORS{'WARNING'};
+  }else{
     if ($opt_R){
-                        print ("$opt_R ");
+      print ("$opt_R ");
     }
-          print ("Process $returnname CRITICAL: $text_output $checkType $returnmessage |$checkType=$data_to_check;$warning;$critical;0;\n");
+    print ("Process $returnname CRITICAL: $text_output $checkType $returnmessage |$checkType=$data_to_check;$warning;$critical;0;\n");
     exit $ERRORS{'CRITICAL'};
-        }
+  }
 }else{
   $text_output = $data_to_check."KB";
   $extra_performance_data .= " $checkType=$text_output;$warning;$critical;0;";
-        if ($data_to_check < $warning){
-                print ("Process $returnname OK: $text_output $checkType |$extra_performance_data\n");
-                exit $ERRORS{'OK'};
+  if ($data_to_check < $warning){
+    print ("Process $returnname OK: $text_output $checkType |$extra_performance_data\n");
+    exit $ERRORS{'OK'};
   }elsif (($data_to_check >= $warning) && ($data_to_check < $critical)){
-                print ("Process $returnname WARNING: $text_output $checkType $returnmessage |$extra_performance_data\n");
-                exit $ERRORS{'WARNING'};
-        }else{
-                if ($opt_R){
-                  print ("$opt_R ");
+    print ("Process $returnname WARNING: $text_output $checkType $returnmessage |$extra_performance_data\n");
+    exit $ERRORS{'WARNING'};
+  }else{
+    if ($opt_R){
+      print ("$opt_R ");
     }
-                print ("Process $returnname CRITICAL: $text_output $checkType $returnmessage |$extra_performance_data\n");
-                exit $ERRORS{'CRITICAL'};
-        }
+    print ("Process $returnname CRITICAL: $text_output $checkType $returnmessage |$extra_performance_data\n");
+    exit $ERRORS{'CRITICAL'};
+  }
 }
 #code should never be able to get this far
 print "Something has gone wrong and the code has reached a place that should not be possible. This should be looked into\n";
