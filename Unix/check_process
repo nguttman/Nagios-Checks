@@ -92,7 +92,7 @@ GetOptions (
 #if there are no entires we get an error about nothing defined to use with -A
 #In either case the script can contiue rather than locking.
 if (!($do_not_sudo)){
-  $sudo_rights = `sudo -l |grep NOPASSWD`;
+  $sudo_rights = `sudo -l -A |grep NOPASSWD`;
   if (($sudo_rights =~ m\cat\) || ($sudo_rights =~ m\all\i)){
     $can_sudo=1;
   }
