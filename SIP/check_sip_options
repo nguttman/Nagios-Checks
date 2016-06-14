@@ -105,6 +105,7 @@ if ($opt_P){
         $baseport=$opt_P;
 }else{
         $baseport=5060;
+        $opt_P=5060;
 }
 if ($opt_t){
         $timeout=$opt_t*1000;
