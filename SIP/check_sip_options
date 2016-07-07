@@ -1,6 +1,5 @@
 #!/usr/bin/perl
 
-
 ## Script written by Noah Guttman and Copyright (C) 2014 Noah Guttman. This script is released and distributed under the terms of the GNU General Public License
 
 #Libraries to use
@@ -22,8 +21,8 @@ my @output;
 my @line;
 my $val;
 
-my $gah :shared;
-$gah ="";
+my $received_packet :shared;
+$received_packet ="";
 my $testerrortotal=0;
 my $response_timeout=0;
 
@@ -150,9 +149,9 @@ for (my $i=0; $i < $retries; $i++){
 
 	#reset timer
 	$timer =0;
-	while (($timer <= $timeout ) && ($gah !~ /SIP\/2.0 \d\d\d/i)){
+	while (($timer <= $timeout ) && ($received_packet !~ /SIP\/2.0 \d\d\d/i)){
 		usleep(1000);
-		$timer = $timer + 2000;
+		$timer = $timer + 1000;
 	}
 	#reset timer
 	$timer =0;
@@ -165,10 +164,10 @@ for (my $i=0; $i < $retries; $i++){
         }
 
 	if ($opt_d){
-                $debug_output = $debug_output."\n------------------------------\nRESPONSE PACKET:$gah\n------------------------------\n";
+                $debug_output = $debug_output."\n------------------------------\nRESPONSE PACKET:$received_packet\n------------------------------\n";
         }
 
-	if ($gah =~ /SIP\/2.0 200/i){
+	if ($received_packet =~ /SIP\/2.0 200/i){
 		$recvthread->join();
 		if ($ReturnMin > $elapsed){
 			$ReturnMin = $elapsed;
@@ -182,7 +181,7 @@ for (my $i=0; $i < $retries; $i++){
 		if ($opt_d){
 			$debug_output = $debug_output."Stats so far : ReturnMin=$ReturnMin"."ms;; ReturnAvg=$ReturnAvg"."ms;; ReturnMax=$ReturnMax"."ms;;ICMP=$icmp_responsed;; Errors=$errors;; Timeouts=$response_timeout;;\n";
 		}
-	}elsif (($gah =~ /SIP\/2.0/i) && ($opt_s)){
+	}elsif (($received_packet =~ /SIP\/2.0/i) && ($opt_s)){
                 $recvthread->join();
                 if ($ReturnMin > $elapsed){
                         $ReturnMin = $elapsed;
@@ -199,7 +198,7 @@ for (my $i=0; $i < $retries; $i++){
 	}elsif ($icmp_responsed >$testerrortotal){
 		$recvthread->join();
 		$testerrortotal++
-	}elsif ($gah =~ /./){
+	}elsif ($received_packet =~ /./){
                 $errors++;
 		$recvthread->join();
 		$testerrortotal++
@@ -209,7 +208,7 @@ for (my $i=0; $i < $retries; $i++){
 		$testerrortotal++;
 	}
 	$sock->close;
-	$gah='';
+	$received_packet='';
 	usleep (5000);
 }
 if ($testerrortotal == 0){
@@ -246,6 +245,6 @@ exit ($exitcode);
 
 
 sub recive_rtpproxy_request{
-		$sock->recv($gah,128) or $icmp_responsed++;
+		$sock->recv($received_packet,128) or $icmp_responsed++;
 		$sock->close;
 }
