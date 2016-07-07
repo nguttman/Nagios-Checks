@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 
-## Script written by Noah Guttman and Copyright (C) 2011 Noah Guttman. This script is released and distributed under the terms of the GNU General Public License
+## Script written by Noah Guttman and Copyright (C) 2015 Noah Guttman. This script is released and distributed under the terms of the GNU General Public License
 
 #Libraries to use
 #use strict;
@@ -42,8 +42,7 @@ $currentStatus = `ipmitool -I lanplus -L USER -H $opt_H -U $opt_U -P $opt_P sdr 
 #Check if there are any Errors, Warnings or Criticals
 if ($currentStatus =~ /OK/i){
 	#If there is at leaste one OK returned then we start with the assumption that we are OK
-        $exitcode =0;
-#        print "OK:";
+	$exitcode =0;
 }
 
 if ($currentStatus =~ /Error/i){
@@ -133,22 +132,22 @@ if ($exitcode == 0){
 #Subs are below
 sub usage {
 	print "::IMPI Server Check Instructions::\n\n";
-        print " -h,             Display this help information\n";
-        print " -H,             Hostname or IP to check\n";
-        print " -M,             Specify a message to return on failure\n";
-        print " -U,             Username to connect\n";
-        print " -P,             Password to connect\n";
-        print "Script written by Noah Guttman and Copyright (C) 2011 Noah Guttman.\n";
-        print "This script is released and distributed under the terms of the GNU\n";
-        print "General Public License.     >>>>    http://www.gnu.org/licenses/\n";
-        print "";
-        print "This program is free software: you can redistribute it and/or modify\n";
-        print "it under the terms of the GNU General Public License as published by\n";
-        print "the Free Software Foundation.\n\n";
-        print "This program is distributed in the hope that it will be useful,\n";
-        print "but WITHOUT ANY WARRANTY; without even the implied warranty of\n";
-        print "MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n";
-        print "GNU General Public License for more details.\n";
-        print ">>>>    http://www.gnu.org/licenses/\n";
-        exit 0;
+  print " -h,             Display this help information\n";
+  print " -H,             Hostname or IP to check\n";
+  print " -M,             Specify a message to return on failure\n";
+  print " -U,             Username to connect\n";
+  print " -P,             Password to connect\n";
+  print "Script written by Noah Guttman and Copyright (C) 2015 Noah Guttman.\n";
+  print "This script is released and distributed under the terms of the GNU\n";
+  print "General Public License.     >>>>    http://www.gnu.org/licenses/\n";
+  print "";
+  print "This program is free software: you can redistribute it and/or modify\n";
+  print "it under the terms of the GNU General Public License as published by\n";
+  print "the Free Software Foundation.\n\n";
+  print "This program is distributed in the hope that it will be useful,\n";
+  print "but WITHOUT ANY WARRANTY; without even the implied warranty of\n";
+  print "MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n";
+  print "GNU General Public License for more details.\n";
+  print ">>>>    http://www.gnu.org/licenses/\n";
+  exit $ERRORS{'OK'};
 }
