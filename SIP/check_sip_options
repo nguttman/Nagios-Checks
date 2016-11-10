@@ -125,13 +125,18 @@ for (my $i=0; $i < $retries; $i++){
                 Proto    => 'udp',
                 PeerPort => $baseport,
                 PeerAddr => $opt_H,
-		LocalAddr => $opt_I,
+                LocalAddr => $opt_I,
+                LocalPort => 5060,
+                ReusePort => 1,
+
                 ) or die "Could not create socket: $!\n";
 	}else{
 	        $sock = IO::Socket::INET->new(
 	        Proto    => 'udp',
 	        PeerPort => $baseport,
 	        PeerAddr => $opt_H,
+            LocalPort => 5060,
+            ReusePort => 1,
 	        ) or die "Could not create socket: $!\n";
 	}
 	$recvthread = threads->new( \&recive_rtpproxy_request);
