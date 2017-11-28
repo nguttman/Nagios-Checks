@@ -5,6 +5,8 @@
 
 #Libraries to use
 use lib "/usr/local/nagios/libexec";
+use lib "/usr/lib/nagios/plugins";
+use lib "/usr/lib64/nagios/plugins";
 
 use utils qw(%ERRORS);
 use warnings;
@@ -590,9 +592,26 @@ if ($opt_N){
 
 ##Check to see if the process is running
 if ($opt_P){
-        if (-r $opt_P){
+  if (-r $opt_P){
     $PID = (`cat $opt_P`);
     chomp($PID);
+  }else{
+    if ($can_sudo){
+      $PID = (`sudo cat $opt_P`);
+      if ($PID !~ m/No such file or directory/i) { 
+        chomp($PID);
+      }else{
+        $PID=0;
+      }
+    }else{
+      if ($opt_R){
+        print ("$opt_R ");
+      }
+      print ("CRITICAL:The file $opt_P may or may not exist. The script cannot check/read it. Please grant nagios sudo NOPASSWD rights to the cat utility. You may also need to disable the requiretty option.\n");
+      exit $ERRORS{'CRITICAL'};
+    }
+  }
+  if ($PID) {
     $processesrunning=(`ps -eo pid,ppid |grep -vw grep |grep -vw check_process |grep -cw $PID`);
   }else{
     $processesrunning=0;
