@@ -17,13 +17,13 @@ Below are all of the switches that can be used when running this check script as
 * RSS - Resident Set Size. This represents how much memory is currently in use by the process. This amount of memory is being reserved (but not neseccarily used) in RAM and Swap. When dealing with processes that have children or share memory in other ways, RSS should not be used as it incorrectly counts any shared memory once for each child in addition to the parent. Instead you should use (if possible) the **PSS** check. This data is gathered by reading the file under /proc/.
 * PSS - Proportional Set Size. This is an updated and more accuract check than RSS as it (correctly) only counts shared memory once (as part of the Parent process). Unfortunetly on some older Kernels this statistic is not available - in which case this check will rerun a PSS of 0 Bytes. This data is gathered by reading the file under /proc/.
 * IO - Disk IO statistics. **This check only reports on read/write operations performed by the process being monitored.** This check does not support warning/critical thresholds and will only alert if the process is not running. It reports the following seven Averages that are cauculated by using temporary files (in /tmp) and reading the corrent couter values under /proc/. The results are averages since the last time the check was run.
-* * Average data read per second (in Bytes). The statistic includes **both** reads from disk and reads from data the Kernel kept cached in memory.
-* * Average data written per second (in Bytes). The statistic includes **both** writes to disk and writes to data the Kernel decided to cache and write later. 
-* * Average number of read operations per second. The statistic includes **both** reads from disk and reads from data the Kernel kept cached in memory.
-* * Average number of write operations per second. The statistic includes **both** writes to disk and writes to data the Kernel decided to cache and write later. 
-* * Average data read per second **from disk** (in Bytes). This statistic includes and pre-emptive reads the Kernel chooses to perform.
-* * Average data written per second **to disk** (in Bytes). This statistic includes any writes that Kernel previous wrote to cache and has now decided to commit to disk.
-* * Average data that was sceduled to be written to disk per second **where the write was cancelled** (in Bytes). It is normal for writes to be cancelled sometimes, but if you find this sattistic is high it may indicate an operation or coding problem with the process.
+  * Average data read per second (in Bytes). The statistic includes **both** reads from disk and reads from data the Kernel kept cached in memory.
+  * Average data written per second (in Bytes). The statistic includes **both** writes to disk and writes to data the Kernel decided to cache and write later. 
+  * Average number of read operations per second. The statistic includes **both** reads from disk and reads from data the Kernel kept cached in memory.
+  * Average number of write operations per second. The statistic includes **both** writes to disk and writes to data the Kernel decided to cache and write later. 
+  * Average data read per second **from disk** (in Bytes). This statistic includes and pre-emptive reads the Kernel chooses to perform.
+  * Average data written per second **to disk** (in Bytes). This statistic includes any writes that Kernel previous wrote to cache and has now decided to commit to disk.
+  * Average data that was sceduled to be written to disk per second **where the write was cancelled** (in Bytes). It is normal for writes to be cancelled sometimes, but if you find this sattistic is high it may indicate an operation or coding problem with the process.
 * stats - Check that process is running and gather basic statistics as performance data. By defualt this will collect and return the statsitics data of the **CPU,Memory, VSZ, RSS and PSS** Checks 
 
 
