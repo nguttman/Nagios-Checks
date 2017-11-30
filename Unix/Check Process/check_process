@@ -309,6 +309,7 @@ sub average_cpu {
   my $input="";
   my $results;
   my $commandstring;
+  my $bash_exit_code=3;
 
   if (-r $temp_file){
   #First we load the old data
@@ -368,12 +369,19 @@ sub average_cpu {
     if (-e $temp_file){
       #now we dump the old temp file
       $commandstring = ("/bin/rm -f $temp_file");
-      system ($commandstring);
+      $bash_exit_code=system ($commandstring);
+      if ($bash_exit_code != 0){
+        print ("UNKNOWN:Unable to remove the old temp file at: $temp_file. The most likely cause is someone running the script as root. It may need to be removed manually\n");
+        exit $ERRORS{'UNKNOWN'};
+      }
     }
     # write the new one
     $commandstring = ("/bin/echo -n \'$current_system_cpu $current_process_cpu\' \>\> $temp_file");
-    system ($commandstring);
-    
+    $bash_exit_code = system ($commandstring);
+    if ($bash_exit_code != 0){
+      print ("UNKNOWN:Unable to create the new temp file at: $temp_file. WIthout this file the script cannot calculate CPU averages.\n");
+      exit $ERRORS{'UNKNOWN'};
+    }    
     #we check to see if we have data to compare
     if (($old_process_cpu) && ($old_system_cpu)){
       #now we can calculate the CPU usage
@@ -430,7 +438,8 @@ sub average_disk_io {
   my $input;
   my $temp_data;
   my $results=" ";
-  my $commandstring;
+  my $commandstring='';
+  my $bash_exit_code=3;
 
   if (-r $temp_file){
     #Then we load the old data
@@ -492,11 +501,21 @@ sub average_disk_io {
   if (-e $temp_file){
     #now we dump the old temp file
     $commandstring = ("/bin/rm -f $temp_file");
-    system ($commandstring);
+    $bash_exit_code = system ($commandstring);
+    if ($bash_exit_code != 0){
+      print ("UNKNOWN:Unable to remove the old temp file at: $temp_file. The most likely cause is someone running the script as root. It may need to be removed manually\n");
+      exit $ERRORS{'UNKNOWN'};
+    }
+
   }
   # write the new one
   $commandstring = ("/bin/echo -n \'$current_system_cpu $current_bytes_read $current_bytes_written $current_read_trans $current_write_trans $current_disk_bytes_read $current_disk_bytes_written $current_canceled_bytes\' \>\> $temp_file");
-  system ($commandstring);
+  $bash_exit_code = system ($commandstring);
+    if ($bash_exit_code != 0){
+      print ("UNKNOWN:Unable to create the new temp file at: $temp_file. WIthout this file the script cannot calculate Disk IO averages.\n");
+      exit $ERRORS{'UNKNOWN'};
+    }
+
 
   #we check to see if we have data to compare
   if (($old_bytes_read) && ($current_bytes_read)){
