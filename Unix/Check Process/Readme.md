@@ -10,7 +10,7 @@ This script needs to be installed on every server where you wish for it to check
 
 ## Requirements to run correctly
 
-This script is written in Perl and uses the standard libraries of `warnings`, `strict`, and `Getopt::Long`. Ity also uses the custom library of  `utils` which is one of the standard libraries included with every NRPE (Nagios Remote Plugin Executor) installation. 
+This script is written in Perl and uses the standard libraries of `warnings`, `strict`, and `Getopt::Long`. It also uses the custom library of  `utils` which is one of the standard libraries included with every NRPE (Nagios Remote Plugin Executor) installation. 
  
 Depending on what switches are passed it can invoke the bash commands : `sudo`, `cat`, `ps`, `top` and `rm`. Unless you plan (foolishly) on having the script run as root you will need to allow the user that does run the script to run the `sudo cat` command without a password ans without a full shell.  
 
