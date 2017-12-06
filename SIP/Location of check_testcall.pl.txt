@@ -1,0 +1,1 @@
+A script that simulates a full end to end SIP testcall and tests for medai can be found in the samples directory of p5-net-sip repository
