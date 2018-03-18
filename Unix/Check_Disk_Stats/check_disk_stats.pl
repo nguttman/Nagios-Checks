@@ -57,7 +57,8 @@ sub usage {
   print "::Disk Statistics Instructions::\n\n";
   print " -h,             Display this help information\n";
   print " -d,             Disk to check - This can be specified multiple times\n";
-  print "                 Writes temporary data to $opt_t\n";
+  print "                   or use ALL to collect data on all disks\n";
+  print "                 This script writes temporary data to $opt_t\n";
   print "Script written by Noah Guttman and Copyright (C) 2014 Noah Guttman.\n";
   print "This script is released and distributed under the terms of the GNU\n";
   print "General Public License.     >>>>    http://www.gnu.org/licenses/\n";
