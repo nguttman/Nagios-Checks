@@ -64,58 +64,53 @@ if ($opt_h){
 }
 
 #We need to check if we can sudo netstat
-#On man *nix systems if you have entries in the sudoers file then running sudo -l
+#On many *nix systems if you have entries in the sudoers file then running sudo -l
 #will prompt for a pssword rather than syaing you have no sudo rights (and then say you have no rights)
 #We get arround this by adding -A
 #if there are entires in sudoers they are returned
 #if there are no entires we get an error about nothing defined to use with -A
 #In either case the script can contiue rather than locking.
-$sudo_rights = `sudo -l -A |grep NOPASSWD`;
-if (($sudo_rights =~ m\netstat\) || ($sudo_rights =~ m\all\i)){
+$sudo_rights = `sudo -ln netstat`;
+if ($sudo_rights =~ m\password is required\){
   print ("Check requires that nagios be allowed to sudo NOPASSWD the netstat utility without a TTY shell.\n");
   exit $ERRORS{'CRITICAL'};
 }
 
-
-
-if ($opt_p =~ /UDP/){
-	if ($opt_d =~ /Send-Q/){
-		@output = (`sudo netstat -uldn |grep udp |awk \'{print \$4"="\$3}\'`);
-	}else{
-		@output = (`sudo netstat -uldn |grep udp |awk \'{print \$4"="\$2}\'`);
-	}
-}elsif ($opt_p =~ /TCP/){
-        if ($opt_d =~ /Send-Q/){
-		@output = (`sudo netstat -tldn |grep tcp |awk \'{print \$4"="\$3}\'`);
-        }else{
-		@output = (`sudo netstat -tldn |grep tcp |awk \'{print \$4"="\$2}\'`);
-	}
+if (($opt_p =~ /UDP/) && ($opt_d =~ /Send-Q/)){
+  @output = (`sudo -n netstat -uldn |grep udp |awk \'{print \$4"="\$3}\'`);
+}elsif (($opt_p =~ /UDP/) && ($opt_d =~ /Recv-Q/)){
+  @output = (`sudo -n netstat -uldn |grep udp |awk \'{print \$4"="\$2}\'`);
+}elsif (($opt_p =~ /TCP/) && ($opt_d =~ /Send-Q/)){
+  @output = (`sudo -n netstat -tldn |grep tcp |awk \'{print \$4"="\$3}\'`);
+}elsif (($opt_p =~ /TCP/) && ($opt_d =~ /Recv-Q/)){
+  @output = (`sudo -n netstat -tldn |grep tcp |awk \'{print \$4"="\$2}\'`);
 }else{ 
-	print "You must define the protocol you wish to check (-p) as either TCP or UDP\n";
-	exit 3;
+  print "You must define the protocol you wish to check (-p) as either TCP or UDP and defined the queue (-d) as either Send-Q or Recv-Q.\n";
+  exit $ERRORS{'UNKNOWN'};
 }
+
 
 chomp(@output);
 foreach $stat (@output){
-	if ($stat =~ m/^\=0/){
-		$queue = (split("=",$stat))[1];
-		if ($queue >= $opt_c){
-			$criticals++;
-			$badqueue = "$badqueue $stat";
-		}elsif($queue >= $opt_w){
-			$warnings++;
-                        $badqueue = "$badqueue $stat";
-		}
-		$longoutput = ("$longoutput$stat;; ");
-	}
+  if ($stat =~ m/^\=0/){
+    $queue = (split("=",$stat))[1];
+    if ($queue >= $opt_c){
+      $criticals++;
+      $badqueue = "$badqueue $stat";
+    }elsif($queue >= $opt_w){
+      $warnings++;
+      $badqueue = "$badqueue $stat";
+    }
+    $longoutput = ("$longoutput$stat;; ");
+  }
 }
 if ($criticals >0){
 	print "CRITICAL: one or more $opt_p $opt_d queues are too long - $badqueue$longoutput\n";
-	exit 2
+	exit $ERRORS{'CRITICAL'};
 }elsif ($warnings >0){
         print "WARNING: one or more $opt_p $opt_d queues are getting too long - $badqueue$longoutput\n";
-        exit 1
+        exit $ERRORS{'WARNING'};
 }else{
 	print "OK:All $opt_p $opt_d queues are within allowed levels$longoutput\n";
-        exit 0;
+        exit $ERRORS{'OK'};;
 }
