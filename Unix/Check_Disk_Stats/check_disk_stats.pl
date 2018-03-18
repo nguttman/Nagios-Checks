@@ -79,81 +79,77 @@ sub usage {
 $currenttime = (`cat /proc/stat |grep "cpu " |awk \'{print \$2 + \$3 + \$4 + \$5 + \$6 + \$7 + \$8}\'`);
 chomp($currenttime);
 $clock_time = gettimeofday;
+@new_disks= `cat /proc/diskstats |grep -v ram |grep -v loop`;
+
 #Next we check if there is an old temp file - if there is we load its data.
 if (-e "$opt_t"){
-	$lastchecktime = (`cat $opt_t |grep cputime |awk \'{print \$2}\'`);
-	$old_clocktime = (`cat $opt_t |grep clocktime |awk \'{print \$2}\'`);
-        $deltatime=($currenttime - $lastchecktime) *10;
-	$clock_delta = ($clock_time - $old_clocktime);
-	@old_disks= (`cat $opt_t |grep -v time`);
+  @old_disks= `cat $opt_t`;
+  my %old_disk_data = ();
+  my @value_array;
+  foreach my $disk (@old_disks){
+    @value_array = split(" ",$disk);
+    $old_disk_data{$value_array[2]} = [split(" ",$disk)];
+  }
+  $deltatime=($currenttime - ${$old_disk_data{'cputime'}}[3]) *10;
+  $clock_delta = ($clock_time - ${$old_disk_data{'clocktime'}}[3]);
+
+  my %current_disk_data = ();
+  foreach my $disk (@new_disks){
+    @value_array = split(" ",$disk);
+    $current_disk_data{$value_array[2]} = [split(" ",$disk)];
+  }
+
+  keys %current_disk_data;
+  if ($opt_d[0] =~ /all/i){
+    @opt_d = (keys %current_disk_data);
+  }
+
+  for my $disk (@opt_d){
+    if (!exists $current_disk_data{$disk}){
+      print ("CRITICAL: $disk is not a disk that exists.\n");
+      exit $ERRORS{'CRITICAL'};   
+    }
+
+    $reads_completed = (${$current_disk_data{$disk}}[3] - ${$old_disk_data{$disk}}[3]) / $clock_delta;
+    $reads_completed = sprintf("%.4f",$reads_completed);
+
+    $sectors_read = (${$current_disk_data{$disk}}[5] - ${$old_disk_data{$disk}}[5]) /2 / $clock_delta;
+    $sectors_read = sprintf("%.4f",$sectors_read);
+
+    $time_reading = (${$current_disk_data{$disk}}[6] - ${$old_disk_data{$disk}}[6]) / $deltatime;
+    $time_reading = sprintf("%.4f",$time_reading);
+
+    $writes_completed = (${$current_disk_data{$disk}}[7] - ${$old_disk_data{$disk}}[7]) / $clock_delta;
+    $writes_completed = sprintf("%.4f",$writes_completed);
+
+    $sectors_written = (${$current_disk_data{$disk}}[9] - ${$old_disk_data{$disk}}[9]) / $clock_delta;
+    $sectors_written = sprintf("%.4f",$sectors_written);
+
+    $time_writing = (${$current_disk_data{$disk}}[10] - ${$old_disk_data{$disk}}[10]) / $deltatime;
+    $time_writing = sprintf("%.4f",$time_writing);
+
+    $weighted_time_IO = (${$current_disk_data{$disk}}[13] - ${$old_disk_data{$disk}}[13]) / $deltatime;
+    $weighted_time_IO = sprintf("%.4f",$weighted_time_IO);
+
+    $longoutput .= " $disk"."_reads_per_second=$reads_completed;;";
+    $longoutput .= " $disk"."_read_per_second=$sectors_read"."KB;;";
+    $longoutput .= " $disk"."_reading_util=$time_reading"."%;;";
+    $longoutput .= " $disk"."_writes_per_second=$writes_completed;;";
+    $longoutput .= " $disk"."_writen_per_second=$sectors_written"."KB;;";
+    $longoutput .= " $disk"."_writing_util=$time_writing"."%;;";
+    $longoutput .= " $disk"."_utilization=$weighted_time_IO"."%;;";
+  }
 }else{
-  print ("First time running test - Results will be available starting next test\n");
-  #We need to pull the data and write it to the tmp file, but we do that below anyways.
+  $longoutput = ("First time running test - Results will be available starting next test");
+  #We need to pull the data and write it to the tmp file, but we will do that anyways
 }
 ## Now we pull the current data and write it to the tmp file. 
 
-@new_disks= `cat /proc/diskstats |grep -v ram |grep -v loop`;
-my %current_disk_data = ();
-my @value_array;
-
-foreach my $disk (@new_disks){
-  @value_array = split(" ",$disk);
-  $current_disk_data{$value_array[2]} = [split(" ",$disk)];
-}
-my %old_disk_data = ();
-foreach my $disk (@old_disks){
-  @value_array = split(" ",$disk);
-  $old_disk_data{$value_array[2]} = [split(" ",$disk)];
-}
-
-keys %current_disk_data;
-if ($opt_d[0] =~ /all/i){
-  @opt_d = (keys %current_disk_data);
-}
-
-
-for my $disk (@opt_d){
-  if (!exists $current_disk_data{$disk}){
-    print ("CRITICAL: $disk is not a disk that exists.\n");
-    exit $ERRORS{'CRITICAL'};   
-  }
-
-
-  $reads_completed = (${$current_disk_data{$disk}}[3] - ${$old_disk_data{$disk}}[3]) / $clock_delta;
-  $reads_completed = sprintf("%.4f",$reads_completed);
-
-  $sectors_read = (${$current_disk_data{$disk}}[5] - ${$old_disk_data{$disk}}[5]) /2 / $clock_delta;
-  $sectors_read = sprintf("%.4f",$sectors_read);
-
-  $time_reading = (${$current_disk_data{$disk}}[6] - ${$old_disk_data{$disk}}[6]) / $deltatime;
-  $time_reading = sprintf("%.4f",$time_reading);
-
-  $writes_completed = (${$current_disk_data{$disk}}[7] - ${$old_disk_data{$disk}}[7]) / $clock_delta;
-  $writes_completed = sprintf("%.4f",$writes_completed);
-
-  $sectors_written = (${$current_disk_data{$disk}}[9] - ${$old_disk_data{$disk}}[9]) / $clock_delta;
-  $sectors_written = sprintf("%.4f",$sectors_written);
-
-  $time_writing = (${$current_disk_data{$disk}}[10] - ${$old_disk_data{$disk}}[10]) / $deltatime;
-  $time_writing = sprintf("%.4f",$time_writing);
-
-  $weighted_time_IO = (${$current_disk_data{$disk}}[13] - ${$old_disk_data{$disk}}[13]) / $deltatime;
-  $weighted_time_IO = sprintf("%.4f",$weighted_time_IO);
-
-  $longoutput .= " $disk"."_reads_per_second=$reads_completed;;";
-  $longoutput .= " $disk"."_read_per_second=$sectors_read"."KB;;";
-  $longoutput .= " $disk"."_reading_util=$time_reading"."%;;";
-  $longoutput .= " $disk"."_writes_per_second=$writes_completed;;";
-  $longoutput .= " $disk"."_writen_per_second=$sectors_written"."KB;;";
-  $longoutput .= " $disk"."_writing_util=$time_writing"."%;;";
-  $longoutput .= " $disk"."_utilization=$weighted_time_IO"."%;;";
-}
-
 
 #We construc the new tmp file and try and write it - exiting on an aerro if we can't.
-$commandstring = ("echo -n \"cputime $currenttime\nclocktime $clock_time\n @new_disks\" \> $opt_t");
+$commandstring = ("echo -n \" 0 0 cputime $currenttime\n 0 0 clocktime $clock_time\n @new_disks\" \> $opt_t");
 my $bash_exit_code = system ($commandstring);
-  if ($bash_exit_code != 0){
+if ($bash_exit_code != 0){
   print ("UNKNOWN:Unable to create the new temp file at: $opt_t. Without this file the script cannot calculate Disk IO statistics.\n");
   exit $ERRORS{'UNKNOWN'};
 }
