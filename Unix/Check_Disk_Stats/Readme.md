@@ -14,7 +14,7 @@ This script is written in Perl and uses the standard libraries of `warnings`, `s
  
 The script uses the `cat` command to load data (from the /tmp/ and /proc/ directoroes) and the `echo` command to write a temporary file at /tmp/disk_statsticts.tmp If you reun the script manualy as root, or as the wrong user, you may break the script by writing a file to /tmp/ that cannot be overwritten by Nagios. If this occurs, just delete the temporary file. 
 
-## Process Resource Usage Check Instructions
+## Disk Statistics Check Instructions
 
  -h,             Display this help information
  -d,             Disk to check - This can be specified multiple times, or you can specift *all*
