@@ -1,0 +1,257 @@
+#!/usr/bin/perl
+
+## Script written by Noah Guttman and Copyright (C) 2020 Noah Guttman. This script is released and distributed under the terms of the GNU General Public License
+
+#Libraries to use
+use lib "/usr/local/nagios/libexec/";
+use lib "/usr/lib/nagios/plugins/";
+use lib "/usr/lib64/nagios/plugins/";
+use lib "/opt/opsview/agent/plugins/";
+use lib "/opt/opsview/monitoringscripts/plugins/";
+
+
+use utils qw(%ERRORS);
+use warnings;
+use strict;
+use Getopt::Long qw(:config no_ignore_case);
+use Net::SSH::Expect;
+
+use vars qw($hostname $keyfile $username $opt_h );
+my $extra_performance_data='';
+my $output_message='';
+my $warning = 0;
+my $critical =0;
+
+
+# Make the Nagios devs happy
+$SIG{'ALRM'} = sub {
+  print "Something has gone wrong and the check has timed out. This should be looked into\n";
+  exit $ERRORS{'UNKNOWN'};
+};
+alarm 30;
+
+##init();
+&usage() if @ARGV == 0;
+
+GetOptions (
+  "H|host=s"              => \$hostname,
+  "dw|disk-warn=i"	  => \my $disk_warning,
+  "dc|disk-crit=i"        => \my $disk_critical,
+  "cw|cpu-warn=i"         => \my $cpu_warning,
+  "cc|cpu-crit=i"         => \my $cpu_critical,
+  "k|keyfile=s"           => \$keyfile,
+  "u|username=s"          => \$username,
+  "h|help"                => sub { usage() },
+);
+#Set default values for everything
+$disk_warning    = 80 if !$disk_warning;
+$disk_critical   = 90 if !$disk_critical;
+$cpu_warning     = 80 if !$cpu_warning;
+$cpu_critical    = 90 if !$cpu_critical;
+
+if (!$hostname){
+  print ("Missing hostname\n");
+  usage();
+}elsif (!$keyfile){
+  print ("Missing path to keyfile\n");
+  usage();
+}elsif (!$username){
+  print ("Missing username\n");
+  usage();
+}
+
+my $ssh = Net::SSH::Expect->new (
+            host => $hostname,
+            user => $username,
+            ssh_option => "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i $keyfile",
+            raw_pty => 1
+);
+
+$ssh->run_ssh() or die "SSH process couldn't start: $!";
+
+($ssh->read_all(2) =~ /\~\#/) or die "where's the remote prompt?";
+
+
+
+sub command_by_ssh{
+  my $command = shift;
+  my $output='';
+  my @output_lines;
+#  print "Running $command\n";
+  $output = $ssh->exec($command);
+  @output_lines =  split("\n",$output);
+#  print "Got output: **$output**\n";
+  return @output_lines;
+}
+
+sub usage {
+  print "::Openstack Node Health Check Instructions::\n\n";
+  print " -h|help,       Display this help information\n";
+  print " -dw|disk-warn, Disk fill trigger a warning (default 80%)\n";
+  print " -dc|disk-crit, Disk fill to trigger a critical (default 90%)\n";
+  print " -cw|cpu-warn,  CPU usage trigger a warning (default 80%)\n";
+  print " -cc|cpu-crit,  CPU usage to trigger a critical (default 90%)\n";
+  print " -H|host,       The Hostname or IP where of the linux server you wish to check.\n";
+  print " -u|username    The username to use to establish the ssh connection\n";
+  print " -k|keyfile,    The path to the sshy key to use to esbalish the connection\n";
+  print "Script written by Noah Guttman and Copyright (C) 2020 Noah Guttman.\n";
+  print "This script is released and distributed under the terms of the GNU\n";
+  print "General Public License.     >>>>    http://www.gnu.org/licenses/\n\n";
+  print "This program is free software: you can redistribute it and/or modify\n";
+  print "it under the terms of the GNU General Public License as published by\n";
+  print "the Free Software Foundation.\n\n";
+  print "This program is distributed in the hope that it will be useful,\n";
+  print "but WITHOUT ANY WARRANTY; without even the implied warranty of\n";
+  print "MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n";
+  print "GNU General Public License for more details.\n";
+  print ">>>>    http://www.gnu.org/licenses/\n";
+  exit $ERRORS{'UNKNOWN'};
+}
+
+
+sub disk_storage_usage {
+  my @disks;
+  my $command_string ="df -k |grep dev |awk \'{print \$1\$6 \" \" \$3 \" \" \$4 \" \" \$5}\'";
+  @disks = command_by_ssh($command_string);
+  foreach my $disk (@disks){
+    if ($disk =~ /^\/dev/){
+      $disk = substr($disk,5);
+      my $disk_name;
+      my $disk_used;
+      my $disk_available;
+      my $disk_used_precentage;
+      ($disk_name, $disk_used, $disk_available, $disk_used_precentage) = split(" ",$disk);
+      $extra_performance_data .= "$disk_name"."_used=$disk_used"."KB;; $disk_name"."_available=$disk_available"."KB;; $disk_name"."_usedp=$disk_used_precentage".";; ";
+      chop($disk_used_precentage);
+      if ($disk_used_precentage >= $disk_critical) {
+        $critical = 1;
+        $output_message .= "CRITICAL: ";
+      }elsif ($disk_used_precentage >= $disk_warning) {
+        $warning = 1;
+        $output_message .= "WARNING: ";
+      }
+      $output_message .= "Disk $disk_name is $disk_used_precentage% used, ";
+    }
+  }
+}
+
+sub memory_usage {
+  my @memory_line;
+  my $command_string ="cat /proc/meminfo | awk \'{print \$1\"=\"\$2\"KB;;\"}\'";
+  @memory_line = command_by_ssh($command_string);
+  foreach my $line (@memory_line){
+    if ($line =~ /KB;;$/){
+      $extra_performance_data .= "$line ";
+    }
+  }
+}
+
+sub cpu_usage {
+  my $old_system_cpu=0;
+  my $new_system_cpu=0;
+  my $delta_cpu=0;
+  my $old_user=0;
+  my $new_user=0;
+  my $delta_user=0;
+  my $old_nice=0;
+  my $new_nice=0;
+  my $delta_nice=0;
+  my $old_system=0;
+  my $new_system=0;
+  my $delta_system=0;
+  my $old_idle=0;
+  my $new_idle=0;
+  my $delta_idle=0;
+  my $old_iowait=0;
+  my $new_iowait=0;
+  my $delta_iowait=0;
+  my $old_irq=0;
+  my $new_irq=0;
+  my $delta_irq=0;
+  my $old_softirq=0;
+  my $new_softirq=0;
+  my $delta_softirq=0;
+  my @cpu_lines;
+  my $input;
+  my $temp_file = "/tmp/$hostname"."_cpu.tmp";
+
+  my $user;
+  my $nice;
+  my $system;
+  my $idle;
+  my $iowait;
+  my $irq;
+  my $softirq;
+
+
+  my $command_string ="cat /proc/stat |grep cpu | head -1 | awk  \'{print \$2\" \"\$3\" \"\$4\" \"\$5\" \"\$6\" \"\$7\" \"\$8}\'";
+  @cpu_lines = command_by_ssh($command_string);
+  if ($cpu_lines[0] =~ /\d+ \d+ \d+ \d+ \d+ \d+ \d+/){
+    ($new_user, $new_nice, $new_system, $new_idle, $new_iowait, $new_irq, $new_softirq) = split(" ",$cpu_lines[0]);
+    $new_system_cpu = $new_user +  $new_nice + $new_system + $new_idle + $new_iowait + $new_irq + $new_softirq;
+  }elsif ($cpu_lines[1] =~ /\d+ \d+ \d+ \d+ \d+ \d+ \d+/){
+    ($new_user, $new_nice, $new_system, $new_idle, $new_iowait, $new_irq, $new_softirq) = split(" ",$cpu_lines[1]);
+    $new_system_cpu = $new_user +  $new_nice + $new_system + $new_idle + $new_iowait + $new_irq + $new_softirq;
+  }else{
+    $critical = 1;
+    $output_message .= "CRITICAL: Unable to parse the cpu data ";
+  }
+
+  if (-r $temp_file){
+    $input = `cat $temp_file`;
+    ($old_user, $old_nice, $old_system, $old_idle, $old_iowait, $old_irq, $old_softirq) = split(" ",$input);
+
+    $old_system_cpu = $old_user + $old_nice + $old_system + $old_idle + $old_iowait + $old_irq + $old_softirq;
+    $delta_cpu= $new_system_cpu - $old_system_cpu;
+    $delta_user = $new_user - $old_user;
+    $delta_nice = $new_nice - $old_nice;
+    $delta_system = $new_system - $old_system;
+    $delta_idle = $new_idle - $old_idle;
+    $delta_iowait = $new_iowait - $old_iowait;
+    $delta_irq = $new_irq - $old_irq;
+    $delta_softirq =$new_softirq - $old_softirq;
+
+    $user = ($delta_user / $delta_cpu) * 100;
+    $nice = ($delta_nice / $delta_cpu) * 100;
+    $system = ($delta_system / $delta_cpu) *100;
+    $idle = ($delta_idle / $delta_cpu) * 100;
+    $iowait = ($delta_iowait / $delta_cpu) * 100;
+    $irq = ($delta_irq / $delta_cpu) * 100;
+    $softirq = ($delta_softirq / $delta_cpu) * 100;
+
+    $extra_performance_data .= "user=$user%;; nice=$nice%;; system=$system%;; idle=$idle%;; iowait=$iowait%;; irq=$irq%;; softirq=$softirq%;; ";
+    $extra_performance_data .= "delta_cpu = $delta_cpu;; delta_user=$delta_user;; delta_nice=$delta_nice;; delta_system=$delta_system;; delta_idle=$delta_idle;; delta_iowait=$delta_iowait;; delta_irq=$delta_irq;; delta_softirq=$delta_softirq;; ";
+    if ($idle <= (100 - $cpu_critical)){
+      $critical = 1;
+      $output_message .= "CRITICAL: ";
+    }elsif ($idle <= (100 - $cpu_warning)){
+      $warning = 1;
+      $output_message .= "WARNING: ";
+    }
+    my $cpu = 100 - $idle;
+    $output_message .= "CPU usage is at $cpu%, ";
+
+  }
+
+  $command_string= ("/bin/echo -n \'$new_user $new_nice $new_system $new_idle $new_iowait $new_irq $new_softirq\' \> $temp_file");
+  system($command_string);
+}
+
+disk_storage_usage;
+memory_usage;
+cpu_usage;
+
+if ($critical){
+   print ("CRITCAL: At least one check failed: $output_message|$extra_performance_data\n");
+   exit(2);
+}elsif($warning){
+   print ("WARNING: At least one check failed: $output_message|$extra_performance_data\n");
+   exit(1);
+}else{
+   print ("All checks OK:  $output_message|$extra_performance_data\n");
+   exit(0);
+}
+print "Something went wrong with the script: $output_message|$extra_performance_data\n";
+exit(3);
+
+
