@@ -91,7 +91,7 @@ if ($opt_h){
         print "MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n";
         print "GNU General Public License for more details.\n";
         print ">>>>    http://www.gnu.org/licenses/\n";
-        exit 0; 
+        exit 0;
 }
 
 
@@ -130,12 +130,12 @@ for (my $i=0; $i < $retries; $i++){
 	        PeerAddr => $opt_H,
 	        ) or die "Could not create socket: $!\n";
 	}
-	$recvthread = threads->new( \&recive_rtpproxy_request);
+	$recvthread = threads->new( \&receive_reply);
 	usleep(10000);
 	$localIP = $sock->sockhost;
 	$localPort = $sock->sockport;
 
-	$optionPacket = "OPTIONS sip:test\@$opt_H SIP/2.0\nVia: SIP/2.0/UDP $localIP:$localPort;branch=z9hG4bK." .$randomstring->randpattern("cCncnCCcnCncnCcncC") .";rport;alias\nFrom: sip:nagios\@$localIP:$localPort;tag=" .$randomstring->randpattern("cCncnCc") ."\nTo: sip:test\@$opt_H\nCall-ID: " .$randomstring->randpattern("cCncnCCcnCncnCcncC") ."\@$localIP\nCSeq: 1 OPTIONS\nContact: sip:nagios\@$localIP:$localPort\nContent-Length: 0\nMax-Forwards: 70\nUser-Agent: NoahGuttman 0.5.0\nAccept: text/plain\n";
+	$optionPacket = "OPTIONS sip:test\@$opt_H SIP/2.0\r\nVia: SIP/2.0/UDP $localIP:$localPort;branch=z9hG4bK." .$randomstring->randpattern("cCncnCCcnCncnCcncC") .";rport;alias\r\nFrom: sip:nagios\@$localIP:$localPort;tag=" .$randomstring->randpattern("cCncnCc") ."\r\nTo: sip:test\@$opt_H\r\nCall-ID: " .$randomstring->randpattern("cCncnCCcnCncnCcncC") ."\@$localIP\r\nCSeq: 1 OPTIONS\r\nContact: sip:nagios\@$localIP:$localPort\r\nContent-Length: 0\r\nMax-Forwards: 70\r\nUser-Agent: NoahGuttman 0.5.0\r\nAccept: text/plain\r\n";
 	if ($opt_d){
 		print "*******\n$optionPacket\n*******";
 	}
@@ -175,7 +175,7 @@ for (my $i=0; $i < $retries; $i++){
 		$testoktotal++;
 		$ReturnAvg = ($ReturnTotal / $testoktotal);
 		if ($opt_d){
-			print ("$debug_output");		
+			print ("$debug_output");
 		}
 		if ($opt_d){
 			print ("|ReturnMin=$ReturnMin"."ms;; ReturnAvg=$ReturnAvg"."ms;; ReturnMax=$ReturnMax"."ms;;ICMP=$icmp_responsed;; Errors=$errors;; Timeouts=$response_timeout;;\n");
@@ -246,7 +246,7 @@ print ("|ICMP=$icmp_responsed;; Errors=$errors;; Timeouts=$response_timeout;;\n"
 exit ($exitcode);
 
 
-sub recive_rtpproxy_request{
-		$sock->recv($gah,128) or $icmp_responsed++;
-		$sock->close;
+sub receive_reply{
+	$sock->recv($gah,128) or $icmp_responsed++;
+	$sock->close;
 }
