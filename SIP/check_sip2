@@ -147,7 +147,7 @@ for (my $i=0; $i < $retries; $i++){
 	$timer =0;
 	while (($timer <= $timeout ) && ($gah !~ /SIP\/2.0 \d\d\d/i)){
 		usleep(1000);
-		$timer = $timer + 2000;
+		$timer = $timer + 1000;
 	}
 	#reset timer
 	$timer =0;
