@@ -13,7 +13,7 @@ use threads;
 use threads::shared;
 use String::Random;
 
-use vars qw($opt_h $opt_H $opt_P $opt_t $opt_r $opt_d $opt_R $opt_M $opt_s $opt_I);
+use vars qw($opt_h $opt_H $opt_P $opt_t $opt_r $opt_d $opt_R $opt_M $opt_s $opt_I $opt_w);
 
 $opt_R ='';
 my $baseport;
@@ -35,6 +35,7 @@ $icmp_responsed = 0;
 my $timeout=1000000;
 my $retries=4;
 my $errors=0;
+my $minfailures =0;
 my $maxfailures =3;
 my $localIP;
 my $localPort;
@@ -58,7 +59,7 @@ my $randomstring = new String::Random;
 if ($#ARGV le 0) {
 	$opt_h=1;
 } else {
-	getopts('hdsH:P:t:r:R:M:I:');
+	getopts('hdsH:P:t:r:R:M:I:w:');
 }
 
 
@@ -78,6 +79,8 @@ if ($opt_h){
         print "                  The default is 1000\n";
         print " -r,             Number of times to retry communications.\n";
         print "                  The default is 4\n";
+        print " -w,             Number of failed attempts to ignore.\n";
+        print "                  The default is 0\n";
         print " -d,             Turn on debug mode - prints out packet(s) recived.\n";
         print "Script written by Noah Guttman and Copyright (C) 2014 Noah Guttman.\n";
         print "This script is released and distributed under the terms of the GNU\n";
@@ -110,7 +113,9 @@ if ($opt_t){
 if ($opt_r){
         $retries=$opt_r;
 }
-
+if ($opt_w){
+        $minfailures=$opt_w;
+}
 
 
 
@@ -213,7 +218,7 @@ for (my $i=0; $i < $retries; $i++){
 	$gah='';
 	usleep (5000);
 }
-if ($testerrortotal == 0){
+if ($testerrortotal <= $minfailures){
 	print ("$opt_R $opt_H $opt_P OK: SIP Component has responded in an average of $ReturnAvg ms.");
 	$exitcode = 0;
 	if ($opt_d){
