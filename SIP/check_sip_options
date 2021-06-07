@@ -12,7 +12,7 @@ use threads;
 use threads::shared;
 use String::Random;
 
-use vars qw($opt_h $opt_H $opt_P $opt_t $opt_r $opt_d $opt_R $opt_M $opt_s $opt_I $opt_c);
+use vars qw($opt_h $opt_H $opt_P $opt_t $opt_r $opt_d $opt_R $opt_M $opt_s $opt_I $opt_c $opt_u $opt_D);
 
 $opt_R ='';
 my $baseport;
@@ -39,6 +39,9 @@ my $localIP;
 my $localPort;
 my $timer =0;
 
+my $fromUser;
+my $fromDomain;
+
 my $ReturnMin=10000000;
 my $ReturnMax=0;
 my $ReturnTotal=0;
@@ -57,7 +60,7 @@ my $randomstring = new String::Random;
 if ($#ARGV le 0) {
 	$opt_h=1;
 } else {
-	getopts('hdsH:P:t:r:R:M:I:c:');
+	getopts('hdsH:P:t:r:R:M:I:c:u:D:');
 }
 
 
@@ -68,6 +71,10 @@ if ($opt_h){
 	print " -H,		Hostname or IP to check\n";
         print " -P,		Port to check\n";
         print "                  The default is 5060\n";
+	print " -u,             User in the From header\n";
+	print "                  The default is nagios\n";
+	print " -D,             Domain in the From header\n";
+	print "                  The default is the local IP\n";
 	print " -s,             Accept any SIP message as valid response\n";
 	print " -I,             Attempt to bind to the IP when sending the Options packet\n";
 	print "                  If this IP is not present on the server the test will fail with an error \n";
@@ -138,8 +145,18 @@ for (my $i=0; $i < $retries; $i++){
 	usleep(10000);
 	$localIP = $sock->sockhost;
 	$localPort = $sock->sockport;
+	if ($opt_u){
+		$fromUser=$opt_u;
+	}else{
+		$fromUser='nagios';
+	}
+	if ($opt_D){
+		$fromDomain=$opt_D;
+	}else{
+		$fromDomain=$localIP;
+	}
 
-	$optionPacket = "OPTIONS sip:test\@$opt_H SIP/2.0\r\nVia: SIP/2.0/UDP $localIP:$localPort;branch=z9hG4bK." .$randomstring->randpattern("cCncnCCcnCncnCcncC") .";rport;alias\r\nFrom: sip:nagios\@$localIP:$localPort;tag=" .$randomstring->randpattern("cCncnCc") ."\r\nTo: sip:test\@$opt_H\r\nCall-ID: " .$randomstring->randpattern("cCncnCCcnCncnCcncC") ."\@$localIP\r\nCSeq: 1 OPTIONS\r\nContact: sip:nagios\@$localIP:$localPort\r\nContent-Length: 0\r\nMax-Forwards: 70\r\nUser-Agent: NoahGuttman 0.5.0\r\nAccept: text/plain\r\n";
+	$optionPacket = "OPTIONS sip:test\@$opt_H SIP/2.0\r\nVia: SIP/2.0/UDP $localIP:$localPort;branch=z9hG4bK." .$randomstring->randpattern("cCncnCCcnCncnCcncC") .";rport;alias\r\nFrom: sip:$fromUser\@$fromDomain:$localPort;tag=" .$randomstring->randpattern("cCncnCc") ."\r\nTo: sip:test\@$opt_H\r\nCall-ID: " .$randomstring->randpattern("cCncnCCcnCncnCcncC") ."\@$localIP\r\nCSeq: 1 OPTIONS\r\nContact: sip:nagios\@$localIP:$localPort\r\nContent-Length: 0\r\nMax-Forwards: 70\r\nUser-Agent: NoahGuttman 0.5.0\r\nAccept: text/plain\r\n";
 	if ($opt_d){
 		$debug_output = $debug_output."\n------------------------------\nOPTIONS PACKET:$optionPacket\n------------------------------\n";
 	}
