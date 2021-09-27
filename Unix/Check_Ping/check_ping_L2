@@ -7,6 +7,10 @@
 #Libraries to use
 use lib "/usr/local/nagios/perl/lib/";
 use lib "/usr/local/nagios/perl/lib/Getopt/";
+use lib "/usr/local/nagios/libexec";
+use lib "/usr/lib/nagios/plugins";
+use lib "/usr/lib64/nagios/plugins";
+use lib "/opt/opsview/agent/perl/lib", "/opt/opsview/perl/lib/perl5", "/opt/opsview/agent/plugins";
 
 use strict;
 use Getopt::Std;
