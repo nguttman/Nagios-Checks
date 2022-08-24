@@ -6,6 +6,7 @@
 #use strict;
 use lib "/usr/local/nagios/perl/lib";
 use lib "/usr/local/nagios/libexec/";
+use lib "/opt/opsview/agent/perl/lib", "/opt/opsview/perl/lib/perl5", "/opt/opsview/agent/plugins", "/opt/opsview/monitoringscripts/plugins";
 use Getopt::Std;
 use utils qw(%ERRORS);
 
@@ -46,17 +47,17 @@ if ($currentStatus =~ /OK/i){
 }
 
 if ($currentStatus =~ /Error/i){
-	#We found at least one error so we want to verify it is a real error and return the error information
+  #We found at least one error so we want to verify it is a real error and return the error information
   foreach my $val (@statusList) {
     if ($val =~ /ERROR/i){
-			if ($val =~ /ok/i){
-				#false alarm - Some IMPI output lines are about errors and return OK (as in there are no errors)
-			}else{
-				#Real error, so we print it, and set the exit code 
-				#we do errors first because they are the lowest severity of alerts
-				$exitcode =3;
-				print "ERROR:";
-				my $error_message = (split(/ +\|/, $val))[4];
+      if ($val =~ /ok/i){
+	#false alarm - Some IMPI output lines are about errors and return OK (as in there are no errors)
+      }else{
+	#Real error, so we print it, and set the exit code 
+	#we do errors first because they are the lowest severity of alerts
+	$exitcode =3;
+	print "ERROR:";
+	my $error_message = (split(/ +\|/, $val))[4];
         print "$error_message **";
 			}
     }
@@ -81,26 +82,26 @@ if ($currentStatus =~ /Warning/i){
 }
 
 if ($currentStatus =~ /Critical/i){
-	foreach my $val (@statusList) {
-		if ($val =~ /CRITICAL/i){
+  foreach my $val (@statusList) {
+    if ($val =~ /CRITICAL/i){
       if ($val =~ /ok/i){
-				if ($val =~ /In Critical Array/i){
-				  #This is a special case we discovered on some dell servrs where a RAID array is in a critical satte, but the IMPI check returns OK anyways.
-				  $exitcode =2;
-				  my $error_message = (split(/ +\|/, $val))[4];
-				  print "$error_message **";
-				}
+	if ($val =~ /In Critical Array/i){
+	  #This is a special case we discovered on some dell servrs where a RAID array is in a critical state, but the IMPI check returns OK anyways.
+	  $exitcode =2;
+	  my $error_message = (split(/ +\|/, $val))[4];
+	  print "$error_message **";
+	}
       	#false alarm - Some IMPI output lines are about CRITICALs and return OK (as in there are no criticals)
       }else{
       	#Real critical event, so we print it, and set the exit code 
-				#we do CRITICALs last because they are the highest severity of alerts
+	#we do CRITICALs last because they are the highest severity of alerts
         $exitcode =2;
         print "CRITICAL:";
         my $error_message = (split(/ +\|/, $val))[4];
         print "$error_message **";
       }
-		}
-	}
+    }
+  }
 }
 # If there were at least one check that was OK (or not) then we let the user know and start parsing perfomance data.
 if ($currentStatus =~ /OK/i){
@@ -110,7 +111,7 @@ if ($currentStatus =~ /OK/i){
 }
 #If you are using the check on a server that I have not tested with then this parsing may require some editing. 
 foreach my $val (@statusList){
-	if (((($val =~ /Temp/i) || ($val =~ /Ambient Temp/i)) || ($val =~ /System Level/i)) ||($val =~ /FAN MOD/i)){
+	if (((((($val =~ /Temp/i) || ($val =~ /Ambient Temp/i)) || ($val =~ /System Level/i)) ||($val =~ /FAN MOD/i))||($val =~ /Volts/i)) ||($val=~/FAN/i)){
 		@resultArray = split(/ +\|/, $val);
 		@performanceArray = split(" ", @resultArray[4]);
 		$resultArray[0] =~ s/ /_/g;
